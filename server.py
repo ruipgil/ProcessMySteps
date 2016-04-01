@@ -47,6 +47,10 @@ class Step:
     adjust = 1
     annotate = 2
 
+def loadGpx(filePath):
+    return tt.Track.fromGPX(filePath)
+
+
 # queue of files to process
 currentQueue = listGpxs()
 # current file that is being processed
@@ -54,7 +58,7 @@ currentFile = currentQueue[0]
 # current step of processing
 currentStep = Step.preview
 # track history, max size of 3
-currentTrackHistory = []
+currentTrackHistory = [loadGpx(currentFile['path'])[0].preprocess()]
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -62,9 +66,6 @@ socketio = SocketIO(app)
 def setHeaders(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
-
-def loadGpx(filePath):
-    return tt.utils.trackFromGPX(filePath)
 
 def preview(fileName):
     trackFile = join(args.source, fileName)
@@ -74,19 +75,10 @@ def preview(fileName):
     return fileName, track, None
 
 
-def adjust():
-    # TODO
-    data = request.get_json(force=True)
-
-    segments = []
-    for k, v in data['data'].iteritems():
-        segments.append(tt.utils.trackFromJson(v['points']))
-    print('a')
-    print(segments[0])
-    processed = tt.tracktotrip(segments[0])
-    print("processed")
-    a = tt.utils.trackToJson(processed)
-    return a
+def adjust(touched, track):
+    track = tt.Track.fromJSON(track)
+    track = track.toTrip()
+    return track.name, track, None
 
 def annotate():
     # TODO
@@ -99,7 +91,7 @@ def executeStep(data):
     if currentStep == Step.preview:
         return preview(currentFile['name'])
     elif currentStep == Step.adjust:
-        return adjust(data['touched'], data['name'], data['track'])
+        return adjust(data['touched'], data['track'])
     elif currentStep == Step.annotate:
         # TODO annotate
         return annotate(data['semantics'], data['track'])
@@ -112,17 +104,19 @@ def advanceStep(toStore):
     global currentFile
     currentTrackHistory.append(toStore)
 
+    print(currentStep)
     if currentStep == Step.preview:
         currentStep = Step.adjust
     elif currentStep == Step.adjust:
         currentStep = Step.annotate
     elif currentStep == Step.annotate:
         currentStep = Step.preview
-        currentTrackHistory = []
         currentQueue = listGpxs()
         currentFile = currentQueue[0]
+        currentTrackHistory = loadGpx(currentFile['path'])
     else:
         currentStep = Step.adjust
+    print(currentStep)
 
 @app.route('/next', methods=['POST'])
 def next():
@@ -130,19 +124,34 @@ def next():
     track = None
 
     payload = request.get_json(force=True)
-    (name, track, more) = executeStep(payload)
+    advanceStep(None)
+    name, track, more = executeStep(payload)
     print('exec')
+    # advanceStep({
+        # 'name': name,
+        # 'track': track,
+        # 'more': more
+        # })
     response = jsonify(
             step=currentStep,
+            files = currentQueue,
+            remaining = len(currentQueue),
             name=name,
-            track=tt.utils.trackToJson([track]))
+            track=track.toJSON())
     print('json done')
-    advanceStep({
-        'name': name,
-        'track': track,
-        'more': more
-        })
     print('advance')
+    return setHeaders(response)
+
+@app.route('/current', methods=['GET'])
+def current():
+    track = currentTrackHistory[-1]
+    print(track.segments)
+    response = jsonify(
+            step = currentStep,
+            files = currentQueue,
+            remaining = len(currentQueue),
+            track = track.toJSON()
+            )
     return setHeaders(response)
 
 @app.route('/info', methods=['GET'])
