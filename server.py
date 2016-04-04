@@ -47,6 +47,16 @@ class Step:
     adjust = 1
     annotate = 2
 
+    N = 3
+
+    @staticmethod
+    def next(current):
+        return (current + 1) % Step.N
+
+    @staticmethod
+    def prev(current):
+        return (current - 1) % Step.N
+
 def loadGpx(filePath):
     return tt.Track.fromGPX(filePath)
 
@@ -69,83 +79,86 @@ def setHeaders(response):
 
 def preview(fileName):
     trackFile = join(args.source, fileName)
-    print('preview will')
-    track = loadGpx(trackFile)
-    print('preview done')
-    return fileName, track, None
-
+    track = loadGpx(trackFile)[0]
+    return track, None
 
 def adjust(touched, track):
     track = tt.Track.fromJSON(track)
+    track = track.preprocess()
     track = track.toTrip()
-    return track.name, track, None
+    return track, None
 
-def annotate():
-    # TODO
-    return None, None, None
+def annotate(touched, track):
+    track = tt.Track.fromJSON(track)
+    track.inferLocation()
+    return track, None
 
 def store():
-    return None, None, None
+    return None, None
 
 def executeStep(data):
-    if currentStep == Step.preview:
-        return preview(currentFile['name'])
-    elif currentStep == Step.adjust:
-        return adjust(data['touched'], data['track'])
-    elif currentStep == Step.annotate:
-        # TODO annotate
-        return annotate(data['semantics'], data['track'])
-    else:
-        return None
-
-def advanceStep(toStore):
     global currentTrackHistory
     global currentStep
     global currentFile
-    currentTrackHistory.append(toStore)
 
-    print(currentStep)
-    if currentStep == Step.preview:
-        currentStep = Step.adjust
-    elif currentStep == Step.adjust:
-        currentStep = Step.annotate
-    elif currentStep == Step.annotate:
-        currentStep = Step.preview
-        currentQueue = listGpxs()
-        currentFile = currentQueue[0]
-        currentTrackHistory = loadGpx(currentFile['path'])
-    else:
-        currentStep = Step.adjust
-    print(currentStep)
-
-@app.route('/next', methods=['POST'])
-def next():
-    name = None
     track = None
+    more = None
 
-    payload = request.get_json(force=True)
-    advanceStep(None)
-    name, track, more = executeStep(payload)
-    print('exec')
-    # advanceStep({
-        # 'name': name,
-        # 'track': track,
-        # 'more': more
-        # })
+    next = Step.next(currentStep)
+    if next == Step.preview:
+        track, more = preview(currentFile['name'])
+    elif next == Step.adjust:
+        track, more = adjust(data['touched'], data['track'])
+    elif next == Step.annotate:
+        # TODO annotate
+        track, more = annotate(data['touched'], data['track'])
+        # TODO load next track?
+    else:
+        print('Invalid step', currentStep)
+        return None, None
+
+    currentStep = next
+    currentTrackHistory.append(track)
+
+    return track, more
+
+def undoStep():
+    global currentStep
+    global currentTrackHistory
+
+    if currentStep == Step.preview:
+        # Do nothing
+        return currentTrackHistory[0], None
+    else:
+        currentStep = Step.prev(currentStep)
+        track = currentTrackHistory.pop()
+        # TODO: only returns track
+        return track, None
+
+@app.route('/previous', methods=['GET'])
+def previous():
+    track, more = undoStep()
     response = jsonify(
             step=currentStep,
             files = currentQueue,
             remaining = len(currentQueue),
-            name=name,
             track=track.toJSON())
-    print('json done')
-    print('advance')
+    return setHeaders(response)
+
+@app.route('/next', methods=['POST'])
+def next():
+    payload = request.get_json(force=True)
+    track, more = executeStep(payload)
+    response = jsonify(
+            step=currentStep,
+            files = currentQueue,
+            remaining = len(currentQueue),
+            track=track.toJSON())
     return setHeaders(response)
 
 @app.route('/current', methods=['GET'])
 def current():
     track = currentTrackHistory[-1]
-    print(track.segments)
     response = jsonify(
             step = currentStep,
             files = currentQueue,
