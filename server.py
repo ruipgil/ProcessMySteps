@@ -132,6 +132,7 @@ def undoStep():
     else:
         currentStep = Step.prev(currentStep)
         track = currentTrackHistory.pop()
+        track = currentTrackHistory.pop()
         # TODO: only returns track
         return track, None
 
