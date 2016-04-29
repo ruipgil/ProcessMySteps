@@ -91,6 +91,7 @@ def adjust(touched, track):
 def annotate(touched, track):
     track = tt.Track.fromJSON(track)
     track.inferLocation()
+    track.inferTransportationMode()
     return track, None
 
 def store():
