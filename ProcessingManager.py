@@ -101,6 +101,10 @@ class ProcessingManager:
 
         return self
 
+    def restore(self):
+        if self.currentStep != Step.done and self.currentStep != Step.preview:
+            self.history.pop()
+
     def process(self, data):
         """Processes the current step
 
@@ -113,16 +117,22 @@ class ProcessingManager:
 
         step = self.currentStep
         touches = data['touches']
-        track = tt.Track.fromJSON(data['track']) if len(touches) > 0 else self.currentTrack()
+        track = tt.Track.fromJSON(data['track']) if len(touches) > 0 else self.currentTrack().copy()
         if step == Step.preview:
-            return self.previewToAdjust(track, touches)
+            result = self.previewToAdjust(track, touches)
         elif step == Step.adjust:
-            return self.adjustToAnnotate(track, touches)
+            result = self.adjustToAnnotate(track, touches)
         elif step == Step.annotate:
             return self.annotateToNext(track, touches)
         else:
             print('Invalid step', self.currentStep)
             return None
+
+        if result:
+            self.currentStep = Step.next(self.currentStep)
+            self.history.append(result)
+
+        return result
 
 
     def loadGpx(self):
@@ -167,6 +177,9 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
+        if not track.isPreprocessed():
+            track.preprocess()
+
         track.inferLocation()
         track.inferTransportation()
 
@@ -192,6 +205,9 @@ class ProcessingManager:
                 by the client
         """
 
+        if not track.isPreprocessed():
+            track.preprocess()
+
         # Backup
         os.rename(join(self.INPUT_FOLDER, self.currentFile), join(self.BACKUP_FOLDER, self.currentFile))
         # Export trip to GPX
@@ -208,5 +224,9 @@ class ProcessingManager:
         return self.history[-1]
 
     def currentState(self):
-        return self.currentStep, self.currentTrack()
+        return {
+                'step': self.currentStep,
+                'queue': self.queue,
+                'track': self.currentTrack().toJSON()
+                }
 
