@@ -1,6 +1,6 @@
-import TrackToTrip as tt
-from path import join, listdir, stat
-import os
+import tracktotrip as tt
+from os import listdir, rename, stat
+from os.path import join
 
 def saveToFile(path, content):
     with open(path, "w") as f:
@@ -41,12 +41,13 @@ class ProcessingManager:
             folder
     """
 
-    def __init__(self, inputPath, backupPath, lifePath):
+    def __init__(self, inputPath, outputPath, backupPath, lifePath):
         self.queue = []
         self.currentFile = None
         self.currentStep = None
         self.history = []
         self.INPUT_PATH = inputPath
+        self.OUTPUT_PATH = outputPath
         self.BACKUP_PATH = backupPath
         self.LIFE_PATH = lifePath
         self.reset()
@@ -91,7 +92,7 @@ class ProcessingManager:
             self.queue = queue
             self.currentFile = queue.pop()
             self.currentStep = Step.preview
-            state = self.loadGpx(self.currentFile).preprocess()
+            state = self.loadGpx().preprocess()
             self.history = [state]
         else:
             self.queue = []
@@ -103,6 +104,7 @@ class ProcessingManager:
 
     def restore(self):
         if self.currentStep != Step.done and self.currentStep != Step.preview:
+            self.currentStep = Step.prev(self.currentStep)
             self.history.pop()
 
     def process(self, data):
@@ -116,7 +118,7 @@ class ProcessingManager:
         """
 
         step = self.currentStep
-        touches = data['touches']
+        touches = [] # TODO: data['touches']
         track = tt.Track.fromJSON(data['track']) if len(touches) > 0 else self.currentTrack().copy()
         if step == Step.preview:
             result = self.previewToAdjust(track, touches)
@@ -142,7 +144,7 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        return tt.Track.fromGPX(join(self.INPUT_PATH, self.currentFile))[0]
+        return tt.Track.fromGPX(self.currentFile['path'])[0]
 
     def previewToAdjust(self, track, changes):
         """Processes a track so that it becomes a trip
@@ -159,12 +161,14 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        if not track.isPreprocessed():
+        print("preview to adjust")
+
+        if not track.preprocessed:
             track.preprocess()
 
         return track.toTrip()
 
-    def adjustToAnnote(self, track, changes):
+    def adjustToAnnotate(self, track, changes):
         """Extracts location and transportation modes
 
         Args:
@@ -177,7 +181,9 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        if not track.isPreprocessed():
+        print("adjust to annotate")
+
+        if not track.preprocessed:
             track.preprocess()
 
         track.inferLocation()
@@ -205,11 +211,13 @@ class ProcessingManager:
                 by the client
         """
 
-        if not track.isPreprocessed():
+        print("annotate to next")
+
+        if not track.preprocessed:
             track.preprocess()
 
         # Backup
-        os.rename(join(self.INPUT_FOLDER, self.currentFile), join(self.BACKUP_FOLDER, self.currentFile))
+        rename(join(self.INPUT_FOLDER, self.currentFile), join(self.BACKUP_FOLDER, self.currentFile))
         # Export trip to GPX
         saveToFile(join(self.OUTPUT_FOLDER, track.name), track.toGPX())
         # To LIFE

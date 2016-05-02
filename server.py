@@ -1,5 +1,5 @@
 import argparse
-from .ProcessingManager import ProcessingManager
+from processingManager import ProcessingManager
 from flask import Flask, request, jsonify
 from flask.ext.socketio import SocketIO
 
@@ -8,13 +8,13 @@ parser.add_argument('-s', '--source', dest='source', metavar='s', type=str,
         required=True,
         help='folder to extract the tracks from')
 parser.add_argument('-b', '--backup', dest='backup', metavar='b', type=str,
-        required=True,
+        default='./backup',
         help='backup folder for the original GPX files')
 parser.add_argument('-l', '--life', dest='life', metavar='l', type=str,
-        required=True,
+        default='./life',
         help='folder to save the each trip\'s LIFE files')
 parser.add_argument('-d', '--dest', dest='dest', metavar='d', type=str,
-        default='./temp',
+        default='./dest',
         help='folder to save the processed tracks')
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
         default=5000,
@@ -30,7 +30,7 @@ app = Flask(__name__)
 socketio = SocketIO(app)
 
 # TODO
-manager = ProcessingManager(inputPath=args.source, outputPath=args.dest, lifePath=args.life, backupPath=args.backup)
+manager = ProcessingManager(args.source, args.dest, args.backup, args.life)
 
 def setHeaders(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
