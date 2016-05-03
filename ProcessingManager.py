@@ -1,4 +1,5 @@
 import tracktotrip as tt
+import db
 from os import listdir, rename, stat
 from os.path import join
 
@@ -6,7 +7,9 @@ def saveToFile(path, content):
     with open(path, "w") as f:
         f.write(content)
 
-def trackToDB(track):
+def tripToDB(track):
+    for segment in track.segments:
+        db.insertTrip(segment)
     return
 
 class Step:

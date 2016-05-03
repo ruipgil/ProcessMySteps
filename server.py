@@ -29,12 +29,15 @@ args = parser.parse_args()
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# TODO
 manager = ProcessingManager(args.source, args.dest, args.backup, args.life)
 
 def setHeaders(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
+
+def sendState():
+    response = jsonify(manager.currentState())
+    return setHeaders(response)
 
 def undoStep():
     manager.restore()
@@ -59,10 +62,6 @@ def next():
     payload = request.get_json(force=True)
     manager.process(payload)
     return sendState()
-
-def sendState():
-    response = jsonify(manager.currentState())
-    return setHeaders(response)
 
 @app.route('/current', methods=['GET'])
 def current():

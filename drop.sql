@@ -1,0 +1,2 @@
+DROP TABLE trips CASCADE;
+DROP TABLE locations CASCADE;
