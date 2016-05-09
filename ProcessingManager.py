@@ -121,14 +121,14 @@ class ProcessingManager:
         """
 
         step = self.currentStep
-        touches = [] # TODO: data['touches']
+        touches = [1] # TODO: data['touches']
         track = tt.Track.fromJSON(data['track']) if len(touches) > 0 else self.currentTrack().copy()
         if step == Step.preview:
             result = self.previewToAdjust(track, touches)
         elif step == Step.adjust:
             result = self.adjustToAnnotate(track, touches)
         elif step == Step.annotate:
-            return self.annotateToNext(track, touches)
+            return self.annotateToNext(track)
         else:
             print('Invalid step', self.currentStep)
             return None
@@ -190,7 +190,7 @@ class ProcessingManager:
             track.preprocess()
 
         track.inferLocation()
-        track.inferTransportation()
+        track.inferTransportationMode()
 
         return track
 
@@ -198,10 +198,10 @@ class ProcessingManager:
         """Stores the track and dequeues another track to be
         processed.
 
-        Moves the current GPX file from the INPUT_FOLDER to the
-        BACKUP_FOLDER, creates a LIFE file in the LIFE_FOLDER
+        Moves the current GPX file from the INPUT_PATH to the
+        BACKUP_PATH, creates a LIFE file in the LIFE_PATH
         and creates a trip entry in the database. Finally the
-        trip is exported as a GPX file to the OUTPUT_FOLDER.
+        trip is exported as a GPX file to the OUTPUT_PATH.
 
         The database variables, DB_NAME, DB_HOST, DB_USER and
         DB_PASS, must be passed through environment variables
@@ -220,16 +220,16 @@ class ProcessingManager:
             track.preprocess()
 
         # Backup
-        rename(join(self.INPUT_FOLDER, self.currentFile), join(self.BACKUP_FOLDER, self.currentFile))
+        rename(self.currentFile['path'], join(self.BACKUP_PATH, self.currentFile['name']))
         # Export trip to GPX
-        saveToFile(join(self.OUTPUT_FOLDER, track.name), track.toGPX())
+        saveToFile(join(self.OUTPUT_PATH, track.name), track.toGPX())
         # To LIFE
-        saveToFile(join(self.LIFE_FOLDER, track.name), track.toLIFE())
+        # saveToFile(join(self.LIFE_PATH, track.name), track.toLIFE())
         # To database
-        trackToDB(track)
+        # tripToDB(track)
 
         self.reset()
-        return None
+        return self.currentTrack()
 
     def currentTrack(self):
         return self.history[-1]
