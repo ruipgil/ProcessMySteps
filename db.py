@@ -1,18 +1,31 @@
 from os import getenv
 import psycopg2
 import ppygis
+import tracktotrip as tt
 
 def connectDB():
     host = getenv('DB_HOST')
     name = getenv('DB_NAME')
     user = getenv('DB_USER')
+    port = getenv('DB_PORT')
     password = getenv('DB_PASS')
     try:
         if host != None and name != None and user != None and password != None:
-            return psycopg2.connect("host=%s dbname=%s user=%s password=%s" % (host, name, user, password))
+            return psycopg2.connect("host=%s dbname=%s user=%s password=%s port=%s" % (host, name, user, password, port))
     except:
         return None
     return None
+
+def checkConn():
+    if connectDB() is not None:
+        print("Connected with DB")
+    else:
+        print("Could not connect with DB")
+        host = getenv('DB_HOST')
+        name = getenv('DB_NAME')
+        user = getenv('DB_USER')
+        password = getenv('DB_PASS')
+        print("host=%s dbname=%s user=%s password=%s" % (host, name, user, password))
 
 def dbPoint(point):
     return ppygis.Point(point.lat, point.lon, 0, srid=4326).write_ewkb()
@@ -22,8 +35,8 @@ def dbPoints(points):
 
 def dbBounds(bound):
     return ppygis.LineString(
-            [   ppygis.Point(bound[0][0], bound[0][1], 0, srid=4336),
-                ppygis.Point(bound[1][0], bound[1][1], 0, srid=4336)])
+            [   ppygis.Point(bound[0], bound[1], 0, srid=4336),
+                ppygis.Point(bound[2], bound[3], 0, srid=4336)])
 
 def insertLocation(cur, label, point):
     cur.execute("""
@@ -98,3 +111,31 @@ def insertTrip(segment):
     cur.commit()
     cur.close()
     conn.close()
+
+def matchCanonicalTrip(trip):
+    """Tries to match canonical trips, with
+    a bounding box
+
+    Args:
+        trip: tracktotrip.Track
+    Returns:
+        Array of matched tracktotrip.Trip
+    """
+    conn = connectDB()
+    if conn == None:
+        return []
+
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM canonical_trips WHERE canonical_trips.geom && ST_MakeEnvelope(%s, %s, %s, %s)
+        """ % trip)
+
+    can_trips = []
+    for row in cur:
+        can_trips = (row['id'], row['points'])
+
+    cur.commit()
+    cur.close()
+    conn.close()
+    return can_trips
+

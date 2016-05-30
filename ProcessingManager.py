@@ -54,6 +54,7 @@ class ProcessingManager:
         self.BACKUP_PATH = backupPath
         self.LIFE_PATH = lifePath
         self.reset()
+        db.checkConn()
 
     def listGpxs(self):
         """Lists gpx files in the INPUT_PATH, and their details
@@ -221,12 +222,19 @@ class ProcessingManager:
 
         # Backup
         rename(self.currentFile['path'], join(self.BACKUP_PATH, self.currentFile['name']))
+
         # Export trip to GPX
         saveToFile(join(self.OUTPUT_PATH, track.name), track.toGPX())
+
         # To LIFE
         # saveToFile(join(self.LIFE_PATH, track.name), track.toLIFE())
+
         # To database
         # tripToDB(track)
+
+        # Build/learn canonical trip
+        canonicalTrips = db.matchCanonicalTrip(track.getBounds())
+        tt.learn_trip(track, canonicalTrips, db.insertCanonicalTrip, db.updateCanonicalTrip)
 
         self.reset()
         return self.currentTrack()
@@ -240,4 +248,35 @@ class ProcessingManager:
                 'queue': self.queue,
                 'track': self.currentTrack().toJSON()
                 }
+
+    def completeTrip(self, data):
+        """Processes the current step
+
+        Args:
+            data: Map with the JSON payload received from the
+                client. Requires properties 'from' and 'to',
+                which should countain point representations
+                with 'lat' and 'lon'.
+        Returns:
+            An array of TrackToTrip.Track.
+        """
+        fromPoint = data['from']
+        toPoint = data['to']
+
+        bb = (
+                min(fromPoint['lat'], toPoint['lat']),
+                min(fromPoint['lon'], toPoint['lon']),
+                max(fromPoint['lat'], toPoint['lat']),
+                max(fromPoint['lon'], toPoint['lon'])
+                )
+        # get matching canonical trips, based on bounding box
+        canonicalTrips = db.matchCanonicalTrip(bb)
+
+        result = []
+        # match points in lines
+        for trip in canonicalTrips:
+            if trip.hasPoint(fromPoint) and trip.hasPoint(toPoint):
+                result.append(trip.trim(fromPoint, toPoint))
+
+        return result
 

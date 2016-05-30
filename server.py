@@ -72,5 +72,15 @@ def current():
     """
     return sendState()
 
+@app.route('/completeTrip', methods=['GET'])
+def completeTrip():
+    """Gets trips already made from one point, to another
+
+    Returns:
+        A response instance
+    """
+    payload = request.get_json(force=True)
+    return manager.completeTrip(payload)
+
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port)
