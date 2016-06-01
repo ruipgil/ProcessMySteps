@@ -17,4 +17,5 @@ echo $PMS_DOCKER_PORT
 
 # START SERVER
 echo "Starting server"
+# env DB_PORT=$PMS_DOCKER_PORT DB_HOST=localhost DB_NAME=pmsteps DB_PASS=pmsteps DB_USER=pmsteps python test_db.py
 env DB_PORT=$PMS_DOCKER_PORT DB_HOST=localhost DB_NAME=pmsteps DB_PASS=pmsteps DB_USER=pmsteps python server.py --source ~/tracks/ --backup ./backup --life ./life/ --dest ./dest

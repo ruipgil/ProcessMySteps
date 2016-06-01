@@ -1,2 +1,5 @@
-DROP TABLE trips CASCADE;
-DROP TABLE locations CASCADE;
+DROP TABLE IF EXISTS trips CASCADE;
+DROP TABLE IF EXISTS locations CASCADE;
+DROP TABLE IF EXISTS trips_transportation_modes CASCADE;
+DROP TABLE IF EXISTS canonical_trips CASCADE;
+DROP TABLE IF EXISTS canonical_trips_relations CASCADE;

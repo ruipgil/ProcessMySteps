@@ -1,7 +1,7 @@
 from os import getenv
 import psycopg2
 import ppygis
-import tracktotrip as tt
+from tracktotrip import Segment, Point
 
 def connectDB():
     host = getenv('DB_HOST')
@@ -30,31 +30,45 @@ def checkConn():
 def dbPoint(point):
     return ppygis.Point(point.lat, point.lon, 0, srid=4326).write_ewkb()
 
+def pointsFromDb(gis_points, timestamps=None):
+    gis_points = ppygis.Geometry.read_ewkb(gis_points).points
+    result = []
+    for i, point in enumerate(gis_points):
+        result.append(Point(0, point.x, point.y, timestamps[i] if timestamps is not None else None))
+    return result
+
 def dbPoints(points):
     return ppygis.LineString(map(lambda p: ppygis.Point(p.lat, p.lon, 0, srid=4326), points), 4326).write_ewkb()
 
 def dbBounds(bound):
-    return ppygis.LineString(
+    return ppygis.Polygon([
+        ppygis.LineString(
             [   ppygis.Point(bound[0], bound[1], 0, srid=4336),
-                ppygis.Point(bound[2], bound[3], 0, srid=4336)])
+                ppygis.Point(bound[0], bound[3], 0, srid=4336),
+                ppygis.Point(bound[2], bound[1], 0, srid=4336),
+                ppygis.Point(bound[2], bound[3], 0, srid=4336)])]).write_ewkb()
 
 def insertLocation(cur, label, point):
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
-            WHERE locations=%s
+            WHERE label=%s
             """, (label, ))
     if cur.rowcount > 0:
         # Updates current location set of points and centroid
         _, centroid, point_cluster = cur.fetchone()
+        centroid = ppygis.Geometry.read_ewkb(centroid)
+        point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
+
         # TODO
         # centroid = computeCentroidWith(point, point_cluster)
-        point_cluster.append(point)
+        point_cluster.points.append(ppygis.Point(point.lat, point.lon, 0, srid=4326))
+
         cur.execute("""
                 UPDATE locations
                 SET centroid=%s, point_cluster=%s
                 WHERE label=%s
-                """, (centroid, point_cluster, label))
+                """, (centroid.write_ewkb(), point_cluster.write_ewkb(), label))
     else:
         # Creates new location
         cur.execute("""
@@ -76,31 +90,9 @@ def insertTransportationMode(cur, tmode, trip_id, segment):
                 fro, to,
                 dbBounds(segment.getBounds(fro, to))))
 
-def insertTrip(segment):
-    conn = connectDB()
-    if conn == None:
-        return
-
-    cur = conn.cursor()
-    cur.execute("""
-            INSERT INTO trips (start_location, end_location, start_date, end_date, bounds, points, timestamps)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING trip_id
-            """,
-            (   segment.fromLocation,
-                segment.toLocation,
-                segment.getStartTime(),
-                segment.getEndTime(),
-                segment.getBounds(),
-                dbPoints(segment.points),
-                map(lambda p: p.time, segment.points)))
-    trip_id = cur.fetchone()
-
-    for tmode in segment.transportationModes:
-        insertTransportationMode(cur, tmode, trip_id, segment)
-
-    insertLocation(cur, segment.fromLocation, segment.pointAt(0))
-    insertLocation(cur, segment.toLocation, segment.pointAt(-1))
+def insertTrip(trip):
+    for segment in trip.segments:
+        insertSegment(segment)
 
     # TODO
     # cur.execute("""
@@ -108,9 +100,47 @@ def insertTrip(segment):
             # VALUES (%s, %s, %s, %s)
             # """, (trip_id, a))
 
-    cur.commit()
+
+def insertSegment(segment):
+    conn = connectDB()
+    if conn == None:
+        return
+
+    cur = conn.cursor()
+
+    insertLocation(cur, segment.location_from.label, segment.pointAt(0))
+    insertLocation(cur, segment.location_to.label, segment.pointAt(-1))
+
+    def toTsmp(d):
+        return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
+
+    tstamps = map(lambda p: p.time, segment.points)
+
+    # TODO: timestamps
+    cur.execute("""
+            INSERT INTO trips (start_location, end_location, start_date, end_date, bounds, points, timestamps)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING trip_id
+            """,
+            (   segment.location_from.label,
+                segment.location_to.label,
+                segment.points[0].time,
+                segment.points[-1].time,
+                dbBounds(segment.getBounds()),
+                dbPoints(segment.points),
+                tstamps
+                ))
+    trip_id = cur.fetchone()
+    trip_id = trip_id[0]
+
+    for tmode in segment.transportation_modes:
+        insertTransportationMode(cur, tmode, trip_id, segment)
+
+    conn.commit()
     cur.close()
     conn.close()
+
+    return trip_id
 
 def matchCanonicalTrip(trip):
     """Tries to match canonical trips, with
@@ -126,16 +156,87 @@ def matchCanonicalTrip(trip):
         return []
 
     cur = conn.cursor()
+    # TODO locations should also be the same
     cur.execute("""
-        SELECT * FROM canonical_trips WHERE canonical_trips.geom && ST_MakeEnvelope(%s, %s, %s, %s)
-        """ % trip)
+        SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+        """ % trip.getBounds())
+    results = cur.fetchall()
 
     can_trips = []
-    for row in cur:
-        can_trips = (row['id'], row['points'])
+    for (canonical_id, points) in results:
+        can_trips.append((canonical_id, Segment(points=pointsFromDb(points))))
 
-    cur.commit()
+    conn.commit()
     cur.close()
     conn.close()
     return can_trips
+
+def insertCanonicalTrip(can_trip, mother_trip_id):
+    """Inserts a new canonical trip into the database
+
+    It also creates a relation between the trip that originated
+    the canonical representation and the representation
+
+    Args:
+        can_trip: tracktotrip.Segment, canonical trip
+        mother_trip_id: NUmber, id of the trip that originated
+            the canonical representation
+    Returns:
+        Number, canonical trip id
+    """
+    conn = connectDB()
+    if conn == None:
+        return
+
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO canonical_trips (start_location, end_location, bounds, points)
+        VALUES (%s, %s, %s, %s)
+        RETURNING canonical_id
+        """, (can_trip.location_from.label, can_trip.location_to.label, dbBounds(can_trip.getBounds()), dbPoints(can_trip.points)))
+    result = cur.fetchone()
+    c_trip_id = result[0]
+
+    cur.execute("""
+        INSERT INTO canonical_trips_relations (canonical_trip, trip)
+        VALUES (%s, %s)
+        """, (c_trip_id, mother_trip_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return c_trip_id
+
+def updateCanonicalTrip(can_id, trip, mother_trip_id):
+    """Updates a canonical trip
+
+    Args:
+        can_id: Number, canonical trip id to update
+        trip: tracktotrip.Segment, canonical trip
+        mother_trip_id: Number, id of trip that caused
+            the update
+    """
+    conn = connectDB()
+    if conn == None:
+        return
+
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE canonical_trips
+        SET bounds=%s, points=%s
+        WHERE canonical_id=%s
+        """, (dbBounds(trip.getBounds()), dbPoints(trip.points), can_id))
+
+    cur.execute("""
+        INSERT INTO canonical_trips_relations (canonical_trip, trip)
+        VALUES (%s, %s)
+        """, (can_id, mother_trip_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return
 
