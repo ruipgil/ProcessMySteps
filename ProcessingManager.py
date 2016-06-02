@@ -1,16 +1,11 @@
 import tracktotrip as tt
 import db
-from os import listdir, rename, stat
+from os import listdir, stat #rename,
 from os.path import join
 
 def saveToFile(path, content):
     with open(path, "w") as f:
         f.write(content)
-
-def tripToDB(track):
-    for segment in track.segments:
-        db.insertTrip(segment)
-    return
 
 class Step:
     preview = 0
@@ -129,7 +124,8 @@ class ProcessingManager:
         elif step == Step.adjust:
             result = self.adjustToAnnotate(track, touches)
         elif step == Step.annotate:
-            return self.annotateToNext(track)
+            t = self.currentTrack().toTrip().inferLocation().inferTransportationMode()
+            return self.annotateToNext(t)
         else:
             print('Invalid step', self.currentStep)
             return None
@@ -221,20 +217,21 @@ class ProcessingManager:
             track.preprocess()
 
         # Backup
-        rename(self.currentFile['path'], join(self.BACKUP_PATH, self.currentFile['name']))
+        # rename(self.currentFile['path'], join(self.BACKUP_PATH, self.currentFile['name']))
 
         # Export trip to GPX
         saveToFile(join(self.OUTPUT_PATH, track.name), track.toGPX())
 
         # To LIFE
-        # saveToFile(join(self.LIFE_PATH, track.name), track.toLIFE())
+        saveToFile(join(self.LIFE_PATH, track.name), track.toLIFE())
 
-        # To database
-        # tripToDB(track)
+        for trip in track.segments:
+            # To database
+            trip_id = db.insertSegment(trip)
 
-        # Build/learn canonical trip
-        canonicalTrips = db.matchCanonicalTrip(track.getBounds())
-        tt.learn_trip(track, canonicalTrips, db.insertCanonicalTrip, db.updateCanonicalTrip)
+            # Build/learn canonical trip
+            canonicalTrips = db.matchCanonicalTrip(trip)
+            tt.learn_trip(trip, trip_id, canonicalTrips, db.insertCanonicalTrip, db.updateCanonicalTrip)
 
         self.reset()
         return self.currentTrack()
