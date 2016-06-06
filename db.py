@@ -185,6 +185,7 @@ def matchCanonicalTripBounds(bounds):
         return []
 
     cur = conn.cursor()
+
     # TODO locations should also be the same?
     cur.execute("""
         SELECT can.canonical_id, can.points, COUNT(rels.trip)
@@ -195,11 +196,12 @@ def matchCanonicalTripBounds(bounds):
         GROUP BY can.canonical_id
         """ % bounds)
     results = cur.fetchall()
-    print(results)
 
     can_trips = []
     for (canonical_id, points, count) in results:
         can_trips.append((canonical_id, Segment(points=pointsFromDb(points)), count))
+
+    print(len(can_trips))
 
     conn.commit()
     cur.close()

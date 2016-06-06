@@ -92,8 +92,9 @@ class ProcessingManager:
             self.queue = queue
             self.currentFile = queue.pop()
             self.currentStep = Step.preview
-            state = self.loadGpx().preprocess()
-            self.history = [state]
+            self.loadDay()
+            # state = self.loadGpx().preprocess()
+            # self.history = [state]
         else:
             self.queue = []
             self.currentFile = None
@@ -101,6 +102,44 @@ class ProcessingManager:
             self.history = []
 
         return self
+
+    def loadDay(self):
+        """Loads all tracks of the most distant day
+        """
+
+        gpxs = self.listGpxs()
+        gpxsToUse = []
+        dayToUse = None
+        dateDayToUse = None
+        dateOfLastGpxToUse = None
+        for gpx in gpxs:
+            if dayToUse is None:
+                track = self.loadGpx(gpx['path'])
+                dayToUse = track.getStartTime()
+                dateDayToUse = dayToUse.date()
+                # timeOfLastGpxToUse = track.getEndTime()
+                gpxsToUse.append(track)
+            else:
+                track = self.loadGpx(gpx['path'])
+                ts = track.getStartTime()
+                ts_date = ts.date()
+                if ts_date < dateDayToUse:
+                    # Reset usage
+                    dayToUse = ts
+                    dateDayToUse = dayToUse.date()
+                    gpxsToUse = [track]
+                elif ts_date == dateDayToUse:
+                    # Append
+                    gpxsToUse.append(track)
+                    if ts < dayToUse:
+                        dayToUse = ts
+
+        segs = []
+        for g in gpxsToUse:
+            segs.extend(g.segments)
+
+        track = tt.Track(segments=segs)
+        self.history = [track]
 
     def restore(self):
         if self.currentStep != Step.done and self.currentStep != Step.preview:
@@ -138,14 +177,14 @@ class ProcessingManager:
         return result
 
 
-    def loadGpx(self):
+    def loadGpx(self, f):
         """Loads the current file as a GPX
 
         Returns:
             A TrackToTrip.Track instance
         """
 
-        return tt.Track.fromGPX(self.currentFile['path'])[0]
+        return tt.Track.fromGPX(f)[0]
 
     def previewToAdjust(self, track, changes):
         """Processes a track so that it becomes a trip
@@ -273,7 +312,7 @@ class ProcessingManager:
 
         result = []
         weights = []
-        totalWeights = 0
+        totalWeights = 0.0
         fromP = tt.Point(0, fromPoint['lat'], fromPoint['lon'], None)
         toP = tt.Point(0, toPoint['lat'], toPoint['lon'], None)
         # match points in lines
@@ -286,6 +325,7 @@ class ProcessingManager:
                 weights.append(count)
                 totalWeights = totalWeights + count
 
+        print(weights, totalWeights)
         return {
                 'possibilities': result,
                 'weights': map(lambda v: v / totalWeights, weights)
