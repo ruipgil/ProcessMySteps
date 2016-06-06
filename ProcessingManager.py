@@ -2,6 +2,7 @@ import tracktotrip as tt
 import db
 from os import listdir, stat #rename,
 from os.path import join
+import numpy as np
 
 def saveToFile(path, content):
     with open(path, "w") as f:
@@ -266,14 +267,27 @@ class ProcessingManager:
                 max(fromPoint['lat'], toPoint['lat']),
                 max(fromPoint['lon'], toPoint['lon'])
                 )
+
         # get matching canonical trips, based on bounding box
-        canonicalTrips = db.matchCanonicalTrip(bb)
+        canonicalTrips = db.matchCanonicalTripBounds(bb)
 
         result = []
+        weights = []
+        totalWeights = 0
+        fromP = tt.Point(0, fromPoint['lat'], fromPoint['lon'], None)
+        toP = tt.Point(0, toPoint['lat'], toPoint['lon'], None)
         # match points in lines
-        for trip in canonicalTrips:
-            if trip.hasPoint(fromPoint) and trip.hasPoint(toPoint):
-                result.append(trip.trim(fromPoint, toPoint))
+        for (tripId, trip, count) in canonicalTrips:
+            fromIndex = trip.closestPointTo(fromP)
+            toIndex = trip.closestPointTo(toP)
+            if fromIndex != toIndex and fromIndex != -1 and toIndex != -1:
+                r = trip.slice(fromIndex, toIndex)
+                result.append(map(lambda p: [p.lat, p.lon], r.points))
+                weights.append(count)
+                totalWeights = totalWeights + count
 
-        return result
+        return {
+                'possibilities': result,
+                'weights': map(lambda v: v / totalWeights, weights)
+                }
 

@@ -156,7 +156,7 @@ def matchCanonicalTrip(trip):
         return []
 
     cur = conn.cursor()
-    # TODO locations should also be the same
+    # TODO locations should also be the same?
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
         """ % trip.getBounds())
@@ -165,6 +165,41 @@ def matchCanonicalTrip(trip):
     can_trips = []
     for (canonical_id, points) in results:
         can_trips.append((canonical_id, Segment(points=pointsFromDb(points))))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return can_trips
+
+def matchCanonicalTripBounds(bounds):
+    """Tries to match canonical trips, with
+    a bounding box
+
+    Args:
+        trip: tracktotrip.Track
+    Returns:
+        Array of matched tracktotrip.Trip
+    """
+    conn = connectDB()
+    if conn == None:
+        return []
+
+    cur = conn.cursor()
+    # TODO locations should also be the same?
+    cur.execute("""
+        SELECT can.canonical_id, can.points, COUNT(rels.trip)
+        FROM canonical_trips AS can
+            INNER JOIN canonical_trips_relations AS rels
+                ON can.canonical_id = rels.canonical_trip
+        WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+        GROUP BY can.canonical_id
+        """ % bounds)
+    results = cur.fetchall()
+    print(results)
+
+    can_trips = []
+    for (canonical_id, points, count) in results:
+        can_trips.append((canonical_id, Segment(points=pointsFromDb(points)), count))
 
     conn.commit()
     cur.close()
