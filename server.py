@@ -4,18 +4,6 @@ from flask import Flask, request, jsonify
 from flask.ext.socketio import SocketIO
 
 parser = argparse.ArgumentParser(description='Starts the server to process tracks')
-parser.add_argument('-s', '--source', dest='source', metavar='s', type=str,
-        required=True,
-        help='folder to extract the tracks from')
-parser.add_argument('-b', '--backup', dest='backup', metavar='b', type=str,
-        default='./backup',
-        help='backup folder for the original GPX files')
-parser.add_argument('-l', '--life', dest='life', metavar='l', type=str,
-        default='./life',
-        help='folder to save the each trip\'s LIFE files')
-parser.add_argument('-d', '--dest', dest='dest', metavar='d', type=str,
-        default='./dest',
-        help='folder to save the processed tracks')
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
         default=5000,
         help='port to use')
@@ -24,12 +12,16 @@ parser.add_argument('--debug', dest='debug', action='store_false',
 parser.add_argument('--verbose', dest='verbose',
         action='store_false',
         help='print debug information of processing stage')
+parser.add_argument('--config', '-c', dest='config', metavar='c', type=str,
+        help='configuration file')
 args = parser.parse_args()
+
+
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-manager = ProcessingManager(args.source, args.dest, args.backup, args.life)
+manager = ProcessingManager(args.config)
 
 def setHeaders(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -81,6 +73,16 @@ def completeTrip():
     """
     payload = request.get_json(force=True)
     return setHeaders(jsonify(manager.completeTrip(payload)))
+
+@app.route('/configuration', methods=['POST'])
+def setConfiguration():
+    payload = request.get_json(force=True)
+    manager.config.update(payload)
+    return setHeaders(jsonify(manager.config))
+
+@app.route('/configuration', methods=['GET'])
+def getConfiguration():
+    return setHeaders(jsonify(manager.config))
 
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port)

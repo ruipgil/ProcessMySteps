@@ -1,14 +1,8 @@
-from os import getenv
 import psycopg2
 import ppygis
 from tracktotrip import Segment, Point
 
-def connectDB():
-    host = getenv('DB_HOST')
-    name = getenv('DB_NAME')
-    user = getenv('DB_USER')
-    port = getenv('DB_PORT')
-    password = getenv('DB_PASS')
+def connectDB(host, name, user, port, password):
     try:
         if host != None and name != None and user != None and password != None:
             return psycopg2.connect("host=%s dbname=%s user=%s password=%s port=%s" % (host, name, user, password, port))
@@ -16,15 +10,11 @@ def connectDB():
         return None
     return None
 
-def checkConn():
-    if connectDB() is not None:
+def checkConn(host, name, user, port, password):
+    if connectDB(host, name, user, port, password) is not None:
         print("Connected with DB")
     else:
         print("Could not connect with DB")
-        host = getenv('DB_HOST')
-        name = getenv('DB_NAME')
-        user = getenv('DB_USER')
-        password = getenv('DB_PASS')
         print("host=%s dbname=%s user=%s password=%s" % (host, name, user, password))
 
 def dbPoint(point):

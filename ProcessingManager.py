@@ -1,8 +1,60 @@
 import tracktotrip as tt
 import db
 from os import listdir, stat #rename,
-from os.path import join
-import numpy as np
+from os.path import join, expanduser
+import requests
+import json
+from collections import OrderedDict
+
+default_config = {
+        'input_path': None,
+        'dest_path': None,
+        'backup_path': None,
+        'dest_path': None,
+        # database
+        'db': {
+            'host': None,
+            'port': None,
+            'name': None,
+            'user': None,
+            'pass': None
+            },
+        # preprocess
+        'preprocess': {
+            'max_acc': tt.preprocess.MAX_ACC
+            },
+        # smoothing
+        'smoothing': {
+            'use': True,
+            'algorithm': 'inverse',
+            'iter': 5,
+            },
+        # spatiotemporal segmentation
+        'segmentation': {
+            'use': True,
+            'epsilon': 0.15,
+            'min_samples': 80,
+            },
+        # simplification
+        'simplification': {
+            'max_distance': 0.01,
+            'max_time': 5,
+            },
+        # location
+        'location': {
+            'max_distance': 20, #Meters
+            'google_key': ''
+            },
+        'transportation': {
+            'remove_stops': True,
+            'min_time': 10, #Seconds
+            },
+        # trip learning
+        'trip_learning': {
+            'epsilon': 0.0
+            },
+        'trip_name_format': '%Y-%m-%d'
+        }
 
 def saveToFile(path, content):
     with open(path, "w") as f:
@@ -40,17 +92,17 @@ class ProcessingManager:
             folder
     """
 
-    def __init__(self, inputPath, outputPath, backupPath, lifePath):
-        self.queue = []
-        self.currentFile = None
+    def __init__(self, configFile):
+        config = json.loads(open(configFile, 'r').read())
+        self.config = dict(default_config)
+        self.config.update(config)
+
+        self.queue = {}
         self.currentStep = None
         self.history = []
-        self.INPUT_PATH = inputPath
-        self.OUTPUT_PATH = outputPath
-        self.BACKUP_PATH = backupPath
-        self.LIFE_PATH = lifePath
         self.reset()
-        db.checkConn()
+        dbc = self.config['db']
+        db.checkConn(dbc['host'], dbc['name'], dbc['port'], dbc['user'], dbc['pass'])
 
     def listGpxs(self):
         """Lists gpx files in the INPUT_PATH, and their details
@@ -62,11 +114,12 @@ class ProcessingManager:
             path, size and date keys
         """
 
-        files = listdir(self.INPUT_PATH)
+        input_path = expanduser(self.config['input_path'])
+        files = listdir(input_path)
         files = filter(lambda f: f.split('.')[-1] == 'gpx', files)
 
         def mapFileToDetails(f):
-            completePath = join(self.INPUT_PATH, f)
+            completePath = join(input_path, f)
             (_, _, _, _, _, _, size, _, creationDate, _) = stat(completePath)
 
             return {
@@ -89,15 +142,11 @@ class ProcessingManager:
 
         queue = self.listGpxs()
         if len(queue) > 0:
-            self.queue = queue
-            self.currentFile = queue.pop()
             self.currentStep = Step.preview
             self.loadDay()
-            # state = self.loadGpx().preprocess()
-            # self.history = [state]
         else:
-            self.queue = []
-            self.currentFile = None
+            self.queue = {}
+            self.currentFiles = []
             self.currentStep = Step.done
             self.history = []
 
@@ -107,32 +156,29 @@ class ProcessingManager:
         """Loads all tracks of the most distant day
         """
 
+        self.queue = {}
+        self.currentFiles = []
+        self.history = []
+
+        queue = {}
+
         gpxs = self.listGpxs()
-        gpxsToUse = []
-        dayToUse = None
-        dateDayToUse = None
-        dateOfLastGpxToUse = None
         for gpx in gpxs:
-            if dayToUse is None:
-                track = self.loadGpx(gpx['path'])
-                dayToUse = track.getStartTime()
-                dateDayToUse = dayToUse.date()
-                # timeOfLastGpxToUse = track.getEndTime()
-                gpxsToUse.append(track)
+            track = self.loadGpx(gpx['path'])
+            day = track.getStartTime().date()
+
+            if day in queue:
+                queue[day].append(track)
             else:
-                track = self.loadGpx(gpx['path'])
-                ts = track.getStartTime()
-                ts_date = ts.date()
-                if ts_date < dateDayToUse:
-                    # Reset usage
-                    dayToUse = ts
-                    dateDayToUse = dayToUse.date()
-                    gpxsToUse = [track]
-                elif ts_date == dateDayToUse:
-                    # Append
-                    gpxsToUse.append(track)
-                    if ts < dayToUse:
-                        dayToUse = ts
+                queue[day] = [track]
+
+        queue = OrderedDict(sorted(queue.items()))
+        keyToUse = queue.keys()[0]
+        gpxsToUse = queue[keyToUse]
+        del queue[keyToUse]
+
+        self.queue = queue
+        self.currentFiles = gpxsToUse
 
         segs = []
         for g in gpxsToUse:
@@ -167,7 +213,6 @@ class ProcessingManager:
             t = self.currentTrack().toTrip().inferLocation().inferTransportationMode()
             return self.annotateToNext(t)
         else:
-            print('Invalid step', self.currentStep)
             return None
 
         if result:
@@ -201,12 +246,11 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        print("preview to adjust")
-
+        c = self.config
         if not track.preprocessed:
-            track.preprocess()
+            track.preprocess(max_acc=c['preprocess']['max_acc'])
 
-        return track.toTrip()
+        return track.toTrip(smooth_strategy=c['smoothing']['algorithm'], smooth_iter=c['smoothing']['iter'], seg_eps=c['segmentation']['epsilon'], seg_min_samples=c['segmentation']['min_samples'], simplify_max_distance=c['simplification']['max_distance'], simplify_max_time=c['simplification']['max_time'], file_format=c['trip_name_format'])
 
     def adjustToAnnotate(self, track, changes):
         """Extracts location and transportation modes
@@ -221,13 +265,38 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        print("adjust to annotate")
-
         if not track.preprocessed:
-            track.preprocess()
+            track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
-        track.inferLocation()
-        track.inferTransportationMode()
+        def getGoogleLoc(point, key='', max_distance=20):
+            if not key:
+                return []
+
+            req = requests.get('https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%s,%s&radius=%s&key=%s' % (point.lat, point.lon, max_distance, key))
+            if req.status_code != 200:
+                return []
+            response = req.json()
+            results = response['results']
+            l = len(results)
+            return map(lambda (i, r): {
+                'label': r['name'],
+                'rank': (l-i)/float(l),
+                # 'vinicity': r['vinicity'] if 'vicinity' in r else '',
+                'types': r['types'],
+                'suggestion_type': 'GOOGLE' }, enumerate(results))
+
+        c = self.config
+
+        def getLoc(point):
+            places = getGoogleLoc(point, key=c['location']['google_key'], max_distance=c['location']['max_distance'])
+            return tt.Location(places[0]['label'], point, other=places)
+
+        for segment in track.segments:
+            segment.location_from = getLoc(segment.points[0])
+            segment.location_to = getLoc(segment.points[-1])
+
+        # track.inferLocation()
+        track.inferTransportationMode(removeStops=c['transportation']['remove_stops'], dt_threshold=c['transportation']['min_time'])
 
         return track
 
@@ -250,20 +319,17 @@ class ProcessingManager:
                 to the track. If empty, no changes were done
                 by the client
         """
-
-        print("annotate to next")
-
         if not track.preprocessed:
-            track.preprocess()
+            track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
         # Backup
-        # rename(self.currentFile['path'], join(self.BACKUP_PATH, self.currentFile['name']))
+        # rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
 
         # Export trip to GPX
-        saveToFile(join(self.OUTPUT_PATH, track.name), track.toGPX())
+        saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
 
         # To LIFE
-        saveToFile(join(self.LIFE_PATH, track.name), track.toLIFE())
+        saveToFile(join(expanduser(self.config['life_path']), track.name), track.toLIFE())
 
         for trip in track.segments:
             # To database
