@@ -74,13 +74,13 @@ def completeTrip():
     payload = request.get_json(force=True)
     return setHeaders(jsonify(manager.completeTrip(payload)))
 
-@app.route('/configuration', methods=['POST'])
+@app.route('/config', methods=['POST'])
 def setConfiguration():
     payload = request.get_json(force=True)
     manager.config.update(payload)
     return setHeaders(jsonify(manager.config))
 
-@app.route('/configuration', methods=['GET'])
+@app.route('/config', methods=['GET'])
 def getConfiguration():
     return setHeaders(jsonify(manager.config))
 

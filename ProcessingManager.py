@@ -46,7 +46,7 @@ default_config = {
             'google_key': ''
             },
         'transportation': {
-            'remove_stops': True,
+            'remove_stops': False,
             'min_time': 10, #Seconds
             },
         # trip learning
@@ -166,6 +166,7 @@ class ProcessingManager:
         for gpx in gpxs:
             track = self.loadGpx(gpx['path'])
             day = track.getStartTime().date()
+            gpx['track'] = gpx
 
             if day in queue:
                 queue[day].append(track)
@@ -203,12 +204,13 @@ class ProcessingManager:
         """
 
         step = self.currentStep
-        touches = [1] # TODO: data['touches']
-        track = tt.Track.fromJSON(data['track']) if len(touches) > 0 else self.currentTrack().copy()
+        print(data)
+        changes = data['changes']
+        track = tt.Track.fromJSON(data['track']) if len(changes) > 0 else self.currentTrack().copy()
         if step == Step.preview:
-            result = self.previewToAdjust(track, touches)
+            result = self.previewToAdjust(track, changes)
         elif step == Step.adjust:
-            result = self.adjustToAnnotate(track, touches)
+            result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
             t = self.currentTrack().toTrip().inferLocation().inferTransportationMode()
             return self.annotateToNext(t)
@@ -250,9 +252,17 @@ class ProcessingManager:
         if not track.preprocessed:
             track.preprocess(max_acc=c['preprocess']['max_acc'])
 
-        return track.toTrip(smooth_strategy=c['smoothing']['algorithm'], smooth_iter=c['smoothing']['iter'], seg_eps=c['segmentation']['epsilon'], seg_min_samples=c['segmentation']['min_samples'], simplify_max_distance=c['simplification']['max_distance'], simplify_max_time=c['simplification']['max_time'], file_format=c['trip_name_format'])
+        return track.toTrip(
+            smooth_strategy=c['smoothing']['algorithm'],
+            smooth_iter=c['smoothing']['iter'],
+            seg_eps=c['segmentation']['epsilon'],
+            seg_min_samples=c['segmentation']['min_samples'],
+            simplify_max_distance=c['simplification']['max_distance'],
+            simplify_max_time=c['simplification']['max_time'],
+            file_format=c['trip_name_format']
+        )
 
-    def adjustToAnnotate(self, track, changes):
+    def adjustToAnnotate(self, track):
         """Extracts location and transportation modes
 
         Args:
@@ -348,7 +358,7 @@ class ProcessingManager:
     def currentState(self):
         return {
                 'step': self.currentStep,
-                'queue': self.queue,
+                'queue': {}, #map(lambda (date, tracks): { 'date': str(date), 'tracks': tracks}, self.queue.items()),
                 'track': self.currentTrack().toJSON()
                 }
 
