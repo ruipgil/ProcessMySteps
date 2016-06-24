@@ -204,8 +204,8 @@ class ProcessingManager:
         """
 
         step = self.currentStep
-        print(data)
         changes = data['changes']
+        LIFEtext = data['LIFE']
         track = tt.Track.fromJSON(data['track']) if len(changes) > 0 else self.currentTrack().copy()
         if step == Step.preview:
             result = self.previewToAdjust(track, changes)
@@ -213,7 +213,7 @@ class ProcessingManager:
             result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
             t = self.currentTrack().toTrip().inferLocation().inferTransportationMode()
-            return self.annotateToNext(t)
+            return self.annotateToNext(t, LIFEtext)
         else:
             return None
 
@@ -248,6 +248,7 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
+        # TODO: use changes
         c = self.config
         if not track.preprocessed:
             track.preprocess(max_acc=c['preprocess']['max_acc'])
@@ -275,8 +276,8 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        if not track.preprocessed:
-            track.preprocess(max_acc=self.config['preprocess']['max_acc'])
+        # if not track.preprocessed:
+        #     track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
         def getGoogleLoc(point, key='', max_distance=20):
             if not key:
@@ -310,7 +311,7 @@ class ProcessingManager:
 
         return track
 
-    def annotateToNext(self, track):
+    def annotateToNext(self, track, LIFEtext):
         """Stores the track and dequeues another track to be
         processed.
 
@@ -329,14 +330,16 @@ class ProcessingManager:
                 to the track. If empty, no changes were done
                 by the client
         """
-        if not track.preprocessed:
-            track.preprocess(max_acc=self.config['preprocess']['max_acc'])
+        # if not track.preprocessed:
+        #     track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
-        # Backup
+        # Backup TOFIX
         # rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
 
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
+
+        print(LIFEtext)
 
         # To LIFE
         saveToFile(join(expanduser(self.config['life_path']), track.name), track.toLIFE())
