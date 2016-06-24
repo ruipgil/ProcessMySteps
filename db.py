@@ -1,5 +1,6 @@
 import psycopg2
 import ppygis
+import datetime
 from tracktotrip import Segment, Point
 
 def connectDB(host, name, user, port, password):
@@ -80,16 +81,45 @@ def insertTransportationMode(cur, tmode, trip_id, segment):
                 fro, to,
                 dbBounds(segment.getBounds(fro, to))))
 
-def insertTrip(trip):
+def insertTrip(trip, life):
+    ids = []
     for segment in trip.segments:
-        insertSegment(segment)
+        ids.push(insertSegment(segment))
 
-    # TODO
-    # cur.execute("""
-            # INSERT INTO stays(trip_id, location_label, start_date, end_date)
-            # VALUES (%s, %s, %s, %s)
-            # """, (trip_id, a))
+    insertStays(trip, ids, life)
 
+
+def insertStays(trip, ids, life):
+    conn = connectDB()
+    if conn == None:
+        return
+
+    cur = conn.cursor()
+    def insert(trip_id, location, start_date, end_date):
+        cur.execute("""
+            INSERT INTO stays(trip_id, location_label, start_date, end_date)
+            VALUES (%s, %s, %s, %s)
+            """, (trip_id, location, start_date, end_date))
+
+    for i, segment in enumerate(trip.segments):
+        trip_id = ids[i]
+        if i == 0:
+            # Start of the day
+            end_date = segment.getStartTime()
+            start_date = datetime.datetime(end_date.year, end_date.month, end_date.day)
+            location = segment.location_from
+        else:
+            start_date = trip.segments[i - 1].getEndTime()
+            end_date = segment.getEndTime()
+            location = segment.location_from
+
+        insert(trip_id, location, start_date, end_date)
+
+        if i == len(trip.segments) - 1:
+            location = segment.location_to
+            start_date = segment.getEndTime()
+            end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
+            insert(trip_id, location, start_date, end_date)
 
 def insertSegment(segment):
     conn = connectDB()

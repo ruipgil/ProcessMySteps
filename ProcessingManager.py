@@ -339,18 +339,20 @@ class ProcessingManager:
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
 
-        print(LIFEtext)
-
         # To LIFE
         saveToFile(join(expanduser(self.config['life_path']), track.name), track.toLIFE())
 
+        trips_ids = []
         for trip in track.segments:
             # To database
             trip_id = db.insertSegment(trip)
+            trips_ids.append(trip_id)
 
             # Build/learn canonical trip
             canonicalTrips = db.matchCanonicalTrip(trip)
             tt.learn_trip(trip, trip_id, canonicalTrips, db.insertCanonicalTrip, db.updateCanonicalTrip)
+
+        db.insertStays(trip, trips_ids, LIFEtext)
 
         self.reset()
         return self.currentTrack()
@@ -404,7 +406,6 @@ class ProcessingManager:
                 weights.append(count)
                 totalWeights = totalWeights + count
 
-        print(weights, totalWeights)
         return {
                 'possibilities': result,
                 'weights': map(lambda v: v / totalWeights, weights)
