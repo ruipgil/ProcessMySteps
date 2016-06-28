@@ -89,12 +89,7 @@ def insertTrip(trip, life):
     insertStays(trip, ids, life)
 
 
-def insertStays(trip, ids, life):
-    conn = connectDB()
-    if conn == None:
-        return
-
-    cur = conn.cursor()
+def insertStays(cur, trip, ids, life):
     def insert(trip_id, location, start_date, end_date):
         cur.execute("""
             INSERT INTO stays(trip_id, location_label, start_date, end_date)
@@ -121,13 +116,7 @@ def insertStays(trip, ids, life):
             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
             insert(trip_id, location, start_date, end_date)
 
-def insertSegment(segment):
-    conn = connectDB()
-    if conn == None:
-        return
-
-    cur = conn.cursor()
-
+def insertSegment(cur, segment):
     insertLocation(cur, segment.location_from.label, segment.pointAt(0))
     insertLocation(cur, segment.location_to.label, segment.pointAt(-1))
 
@@ -156,13 +145,9 @@ def insertSegment(segment):
     for tmode in segment.transportation_modes:
         insertTransportationMode(cur, tmode, trip_id, segment)
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
     return trip_id
 
-def matchCanonicalTrip(trip):
+def matchCanonicalTrip(cur, trip):
     """Tries to match canonical trips, with
     a bounding box
 
@@ -171,11 +156,6 @@ def matchCanonicalTrip(trip):
     Returns:
         Array of matched tracktotrip.Trip
     """
-    conn = connectDB()
-    if conn == None:
-        return []
-
-    cur = conn.cursor()
     # TODO locations should also be the same?
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
@@ -186,12 +166,9 @@ def matchCanonicalTrip(trip):
     for (canonical_id, points) in results:
         can_trips.append((canonical_id, Segment(points=pointsFromDb(points))))
 
-    conn.commit()
-    cur.close()
-    conn.close()
     return can_trips
 
-def matchCanonicalTripBounds(bounds):
+def matchCanonicalTripBounds(cur, bounds):
     """Tries to match canonical trips, with
     a bounding box
 
@@ -200,11 +177,6 @@ def matchCanonicalTripBounds(bounds):
     Returns:
         Array of matched tracktotrip.Trip
     """
-    conn = connectDB()
-    if conn == None:
-        return []
-
-    cur = conn.cursor()
 
     # TODO locations should also be the same?
     cur.execute("""
@@ -221,14 +193,9 @@ def matchCanonicalTripBounds(bounds):
     for (canonical_id, points, count) in results:
         can_trips.append((canonical_id, Segment(points=pointsFromDb(points)), count))
 
-    print(len(can_trips))
-
-    conn.commit()
-    cur.close()
-    conn.close()
     return can_trips
 
-def insertCanonicalTrip(can_trip, mother_trip_id):
+def insertCanonicalTrip(cur, can_trip, mother_trip_id):
     """Inserts a new canonical trip into the database
 
     It also creates a relation between the trip that originated
@@ -241,11 +208,6 @@ def insertCanonicalTrip(can_trip, mother_trip_id):
     Returns:
         Number, canonical trip id
     """
-    conn = connectDB()
-    if conn == None:
-        return
-
-    cur = conn.cursor()
 
     cur.execute("""
         INSERT INTO canonical_trips (start_location, end_location, bounds, points)
@@ -260,13 +222,9 @@ def insertCanonicalTrip(can_trip, mother_trip_id):
         VALUES (%s, %s)
         """, (c_trip_id, mother_trip_id))
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
     return c_trip_id
 
-def updateCanonicalTrip(can_id, trip, mother_trip_id):
+def updateCanonicalTrip(cur, can_id, trip, mother_trip_id):
     """Updates a canonical trip
 
     Args:
@@ -275,11 +233,6 @@ def updateCanonicalTrip(can_id, trip, mother_trip_id):
         mother_trip_id: Number, id of trip that caused
             the update
     """
-    conn = connectDB()
-    if conn == None:
-        return
-
-    cur = conn.cursor()
 
     cur.execute("""
         UPDATE canonical_trips
@@ -292,8 +245,5 @@ def updateCanonicalTrip(can_id, trip, mother_trip_id):
         VALUES (%s, %s)
         """, (can_id, mother_trip_id))
 
-    conn.commit()
-    cur.close()
-    conn.close()
     return
 

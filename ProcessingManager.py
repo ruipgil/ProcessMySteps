@@ -179,6 +179,7 @@ class ProcessingManager:
 
             track = tt.Track(segments=segs)
             self.history = [track]
+            self.currentStep = Step.preview
         else:
             print('Cannot find day')
 
@@ -253,7 +254,7 @@ class ProcessingManager:
         elif step == Step.adjust:
             result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
-            t = self.currentTrack().toTrip().inferLocation().inferTransportationMode()
+            t = track.inferLocation().inferTransportationMode()
             return self.annotateToNext(t, LIFEtext)
         else:
             return None
@@ -362,6 +363,15 @@ class ProcessingManager:
 
         return track
 
+    def db_connect(self):
+        dbc = self.config['db']
+        conn = db.connectDB(dbc['host'], dbc['name'], dbc['port'], dbc['user'], dbc['pass'])
+        if conn:
+            return conn, conn.cur()
+        else:
+            return None, None
+
+
     def annotateToNext(self, track, LIFEtext):
         """Stores the track and dequeues another track to be
         processed.
@@ -393,17 +403,26 @@ class ProcessingManager:
         # To LIFE
         saveToFile(join(expanduser(self.config['life_path']), track.name), track.toLIFE())
 
-        trips_ids = []
-        for trip in track.segments:
-            # To database
-            trip_id = db.insertSegment(trip)
-            trips_ids.append(trip_id)
+        conn, cur = self.db_connect()
 
-            # Build/learn canonical trip
-            canonicalTrips = db.matchCanonicalTrip(trip)
-            tt.learn_trip(trip, trip_id, canonicalTrips, db.insertCanonicalTrip, db.updateCanonicalTrip)
+        if conn and cur:
+            trips_ids = []
+            for trip in track.segments:
+                # To database
+                trip_id = db.insertSegment(cur, trip)
+                trips_ids.append(trip_id)
 
-        db.insertStays(trip, trips_ids, LIFEtext)
+                # Build/learn canonical trip
+                canonicalTrips = db.matchCanonicalTrip(cur, trip)
+                insertFn = lambda (can_trip, mother_trip_id): db.insertCanonicalTrip(cur, can_trip, mother_trip_id)
+                updateFn = lambda (can_id, trip, mother_trip_id): db.updateCanonicalTrip(cur, can_id, trip, mother_trip_id)
+                tt.learn_trip(trip, trip_id, canonicalTrips, insertFn, updateFn)
+
+            db.insertStays(cur, trip, trips_ids, LIFEtext)
+
+            conn.commit()
+            cur.close()
+            conn.close()
 
         self.reset()
         return self.currentTrack()
@@ -440,8 +459,14 @@ class ProcessingManager:
                 max(fromPoint['lon'], toPoint['lon'])
                 )
 
-        # get matching canonical trips, based on bounding box
-        canonicalTrips = db.matchCanonicalTripBounds(bb)
+        conn, cur = self.db_connect()
+        if conn and cur:
+            # get matching canonical trips, based on bounding box
+            canonicalTrips = db.matchCanonicalTripBounds(cur, bb)
+
+            conn.commit()
+            cur.close()
+            conn.close()
 
         result = []
         weights = []

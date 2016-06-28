@@ -1,5 +1,5 @@
 import argparse
-from processingManager import ProcessingManager
+from ProcessingManager import ProcessingManager
 from flask import Flask, request, jsonify
 from flask.ext.socketio import SocketIO
 
