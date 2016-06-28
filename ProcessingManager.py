@@ -4,7 +4,9 @@ from os import listdir, stat #rename,
 from os.path import join, expanduser
 import requests
 import json
+import re
 from collections import OrderedDict
+import datetime
 
 default_config = {
         'input_path': None,
@@ -59,6 +61,15 @@ default_config = {
 def saveToFile(path, content):
     with open(path, "w") as f:
         f.write(content)
+
+TIME_RX = re.compile('\<time\>([^\<]+)\<\/time\>')
+def predictStartDate(filename):
+    f = open(filename, 'r').read()
+    result = TIME_RX.search(f)
+    return gt(result.group(1))
+
+def gt(dt_str):
+    return datetime.datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ")
 
 class Step:
     preview = 0
@@ -120,13 +131,15 @@ class ProcessingManager:
 
         def mapFileToDetails(f):
             completePath = join(input_path, f)
-            (_, _, _, _, _, _, size, _, creationDate, _) = stat(completePath)
+            (_, _, _, _, _, _, size, _, _, _) = stat(completePath)
 
+            date = predictStartDate(completePath)
             return {
                     'name': f,
                     'path': completePath,
                     'size': size,
-                    'date': creationDate
+                    'start': date,
+                    'date': date.date().isoformat()
                     }
 
         files = map(mapFileToDetails, files)
@@ -143,43 +156,71 @@ class ProcessingManager:
         queue = self.listGpxs()
         if len(queue) > 0:
             self.currentStep = Step.preview
-            self.loadDay()
+            self.loadDays()
         else:
             self.queue = {}
-            self.currentFiles = []
+            self.currentDay = None
             self.currentStep = Step.done
             self.history = []
 
         return self
 
-    def loadDay(self):
+    def changeDay(self, day):
+        if day in self.queue.keys():
+            keyToUse = day
+            gpxsToUse = self.queue[keyToUse]
+            gpxsToUse = map(lambda gpx: self.loadGpx(gpx['path']), gpxsToUse)
+
+            self.currentDay = keyToUse
+
+            segs = []
+            for g in gpxsToUse:
+                segs.extend(g.segments)
+
+            track = tt.Track(segments=segs)
+            self.history = [track]
+        else:
+            print('Cannot find day')
+
+    def reloadQueue(self):
+        queue = {}
+
+        gpxs = self.listGpxs()
+        for gpx in gpxs:
+            day = gpx['date']
+            if day in queue:
+                queue[day].append(gpx)
+            else:
+                queue[day] = [gpx]
+
+        self.queue = OrderedDict(sorted(queue.items()))
+
+    def loadDays(self):
         """Loads all tracks of the most distant day
         """
 
         self.queue = {}
-        self.currentFiles = []
+        self.currentDay = None
         self.history = []
 
         queue = {}
 
         gpxs = self.listGpxs()
         for gpx in gpxs:
-            track = self.loadGpx(gpx['path'])
-            day = track.getStartTime().date()
-            gpx['track'] = gpx
-
+            day = gpx['date']
             if day in queue:
-                queue[day].append(track)
+                queue[day].append(gpx)
             else:
-                queue[day] = [track]
+                queue[day] = [gpx]
 
         queue = OrderedDict(sorted(queue.items()))
         keyToUse = queue.keys()[0]
         gpxsToUse = queue[keyToUse]
-        del queue[keyToUse]
+        gpxsToUse = map(lambda gpx: self.loadGpx(gpx['path']), gpxsToUse)
+        # del queue[keyToUse]
 
         self.queue = queue
-        self.currentFiles = gpxsToUse
+        self.currentDay = keyToUse
 
         segs = []
         for g in gpxsToUse:
@@ -223,6 +264,16 @@ class ProcessingManager:
 
         return result
 
+    def bulkProcess(self):
+        while len(self.queue.values()) > 0:
+            # preview -> adjust
+            self.process({ 'changes': [], 'LIFE': '' })
+            # adjust -> annotate
+            self.process({ 'changes': [], 'LIFE': '' })
+            # annotate -> store
+            # TODO: LIFE
+            self.process({ 'changes': [], 'LIFE': 'TODO' })
+        print('Bulk process')
 
     def loadGpx(self, f):
         """Loads the current file as a GPX
@@ -363,8 +414,9 @@ class ProcessingManager:
     def currentState(self):
         return {
                 'step': self.currentStep,
-                'queue': {}, #map(lambda (date, tracks): { 'date': str(date), 'tracks': tracks}, self.queue.items()),
-                'track': self.currentTrack().toJSON()
+                'queue': self.queue.items(), #map(lambda (date, tracks): { 'date': str(date), 'tracks': tracks}, self.queue.items()),
+                'track': self.currentTrack().toJSON(),
+                'currentDay': self.currentDay
                 }
 
     def completeTrip(self, data):

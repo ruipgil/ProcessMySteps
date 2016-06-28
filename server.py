@@ -84,5 +84,21 @@ def setConfiguration():
 def getConfiguration():
     return setHeaders(jsonify(manager.config))
 
+@app.route('/changeDay', methods=['POST'])
+def changeDay():
+    payload = request.get_json(force=True)
+    manager.changeDay(payload['day'])
+    return sendState()
+
+@app.route('/reloadQueue', methods=['GET'])
+def reloadQueue():
+    manager.reloadQueue()
+    return sendState()
+
+@app.route('/bulkProcess', methods=['GET'])
+def bulkProcess():
+    manager.bulkProcess()
+    return sendState()
+
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port)
