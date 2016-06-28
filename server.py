@@ -101,4 +101,4 @@ def bulkProcess():
     return sendState()
 
 if __name__ == '__main__':
-    app.run(debug=args.debug, port=args.port)
+    app.run(debug=args.debug, port=args.port, host='0.0.0.0')
