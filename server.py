@@ -1,7 +1,7 @@
 import argparse
 from ProcessingManager import ProcessingManager
 from flask import Flask, request, jsonify
-from flask.ext.socketio import SocketIO
+# from flask.ext.socketio import SocketIO
 
 parser = argparse.ArgumentParser(description='Starts the server to process tracks')
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
@@ -19,7 +19,7 @@ args = parser.parse_args()
 
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+# socketio = SocketIO(app)
 
 manager = ProcessingManager(args.config)
 
