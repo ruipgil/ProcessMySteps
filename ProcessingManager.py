@@ -29,7 +29,7 @@ default_config = {
         'smoothing': {
             'use': True,
             'algorithm': 'inverse',
-            'iter': 5,
+            'noise': 5,
             },
         # spatiotemporal segmentation
         'segmentation': {
@@ -306,7 +306,7 @@ class ProcessingManager:
 
         return track.toTrip(
             smooth_strategy=c['smoothing']['algorithm'],
-            smooth_iter=c['smoothing']['iter'],
+            smooth_noise=c['smoothing']['noise'],
             seg_eps=c['segmentation']['epsilon'],
             seg_min_samples=c['segmentation']['min_samples'],
             simplify_max_distance=c['simplification']['max_distance'],
