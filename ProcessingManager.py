@@ -1,6 +1,6 @@
 import tracktotrip as tt
 import db
-from os import listdir, stat #rename,
+from os import listdir, stat, rename
 from os.path import join, expanduser
 import requests
 import json
@@ -395,7 +395,7 @@ class ProcessingManager:
         #     track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
         # Backup TOFIX
-        # rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
+        rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
 
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
