@@ -13,6 +13,7 @@ default_config = {
         'dest_path': None,
         'backup_path': None,
         'dest_path': None,
+        'life_all': None,
         # database
         'db': {
             'host': None,
@@ -372,7 +373,7 @@ class ProcessingManager:
             return None, None
 
 
-    def annotateToNext(self, track, LIFEtext):
+    def annotateToNext(self, track, life):
         """Stores the track and dequeues another track to be
         processed.
 
@@ -391,17 +392,27 @@ class ProcessingManager:
                 to the track. If empty, no changes were done
                 by the client
         """
-        # if not track.preprocessed:
-        #     track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
-        # Backup TOFIX
+        # Backup
         rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
 
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
 
         # To LIFE
-        saveToFile(join(expanduser(self.config['life_path']), track.name), track.toLIFE())
+        if self.config['life_path']:
+            saveToFile(join(expanduser(self.config['life_path']), track.name), life)
+
+            if self.config['life_all']:
+                life_all_file = expanduser(self.config['life_all'])
+            else:
+                life_all_file = join(expanduser(self.config['life_path']), 'all.life')
+
+            with open(life_all_file, 'rw') as f:
+                content = f.read()
+                content = content + "\n\n"
+                content = life
+                f.write(content)
 
         conn, cur = self.db_connect()
 
@@ -418,13 +429,12 @@ class ProcessingManager:
                 updateFn = lambda (can_id, trip, mother_trip_id): db.updateCanonicalTrip(cur, can_id, trip, mother_trip_id)
                 tt.learn_trip(trip, trip_id, canonicalTrips, insertFn, updateFn)
 
-            db.insertStays(cur, trip, trips_ids, LIFEtext)
+            db.insertStays(cur, trip, trips_ids, life)
 
             conn.commit()
             cur.close()
             conn.close()
 
-        self.reset()
         return self.currentTrack()
 
     def currentTrack(self):
