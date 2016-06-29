@@ -197,39 +197,16 @@ class ProcessingManager:
 
         self.queue = OrderedDict(sorted(queue.items()))
 
+    def nextDay(self, delete=True):
+        if delete:
+            del self.queue[self.currentDay]
+        self.changeDay(self.queue.keys()[0])
+
     def loadDays(self):
         """Loads all tracks of the most distant day
         """
-
-        self.queue = {}
-        self.currentDay = None
-        self.history = []
-
-        queue = {}
-
-        gpxs = self.listGpxs()
-        for gpx in gpxs:
-            day = gpx['date']
-            if day in queue:
-                queue[day].append(gpx)
-            else:
-                queue[day] = [gpx]
-
-        queue = OrderedDict(sorted(queue.items()))
-        keyToUse = queue.keys()[0]
-        gpxsToUse = queue[keyToUse]
-        gpxsToUse = map(lambda gpx: self.loadGpx(gpx['path']), gpxsToUse)
-        # del queue[keyToUse]
-
-        self.queue = queue
-        self.currentDay = keyToUse
-
-        segs = []
-        for g in gpxsToUse:
-            segs.extend(g.segments)
-
-        track = tt.Track(segments=segs)
-        self.history = [track]
+        self.reloadQueue()
+        self.nextDay(delete=False)
 
     def restore(self):
         if self.currentStep != Step.done and self.currentStep != Step.preview:
@@ -248,7 +225,7 @@ class ProcessingManager:
 
         step = self.currentStep
         changes = data['changes']
-        LIFEtext = data['LIFE']
+        life = data['LIFE']
         track = tt.Track.fromJSON(data['track']) if len(changes) > 0 else self.currentTrack().copy()
         if step == Step.preview:
             result = self.previewToAdjust(track, changes)
@@ -256,7 +233,7 @@ class ProcessingManager:
             result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
             t = track.inferLocation().inferTransportationMode()
-            return self.annotateToNext(t, LIFEtext)
+            return self.annotateToNext(t, life)
         else:
             return None
 
@@ -435,6 +412,8 @@ class ProcessingManager:
             cur.close()
             conn.close()
 
+        self.nextDay()
+        self.currentStep = Step.preview
         return self.currentTrack()
 
     def currentTrack(self):
