@@ -1,4 +1,5 @@
 import tracktotrip as tt
+from tracktotrip.transportationMode import Classifier
 import db
 from os import listdir, stat, rename
 from os.path import join, expanduser
@@ -51,6 +52,7 @@ default_config = {
         'transportation': {
             'remove_stops': False,
             'min_time': 10, #Seconds
+            'classifier_path': None,
             },
         # trip learning
         'trip_learning': {
@@ -108,6 +110,12 @@ class ProcessingManager:
         config = json.loads(open(configFile, 'r').read())
         self.config = dict(default_config)
         self.config.update(config)
+
+        clfPath = expanduser(self.config['transportation']['classifier_path'])
+        if clfPath:
+            self.clf = Classifier.load_from_file(clfPath)
+        else:
+            self.clf = Classifier.create()
 
         self.queue = {}
         self.currentStep = None
@@ -337,7 +345,7 @@ class ProcessingManager:
             segment.location_to = getLoc(segment.points[-1])
 
         # track.inferLocation()
-        track.inferTransportationMode(removeStops=c['transportation']['remove_stops'], dt_threshold=c['transportation']['min_time'])
+        track.inferTransportationMode(self.clf, removeStops=c['transportation']['remove_stops'], dt_threshold=c['transportation']['min_time'])
 
         return track
 
@@ -375,6 +383,8 @@ class ProcessingManager:
 
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
+
+        # TODO: update classifier
 
         # To LIFE
         if self.config['life_path']:
