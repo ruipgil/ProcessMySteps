@@ -3,63 +3,57 @@ from tracktotrip.transportationMode import Classifier
 import db
 from os import listdir, stat, rename
 from os.path import join, expanduser
-import requests
 import json
 import re
 from collections import OrderedDict
 import datetime
 
 default_config = {
-        'input_path': None,
-        'dest_path': None,
-        'backup_path': None,
-        'dest_path': None,
-        'life_all': None,
-        # database
-        'db': {
-            'host': None,
-            'port': None,
-            'name': None,
-            'user': None,
-            'pass': None
-            },
-        # preprocess
-        'preprocess': {
-            'max_acc': tt.preprocess.MAX_ACC
-            },
-        # smoothing
-        'smoothing': {
-            'use': True,
-            'algorithm': 'inverse',
-            'noise': 5,
-            },
-        # spatiotemporal segmentation
-        'segmentation': {
-            'use': True,
-            'epsilon': 0.15,
-            'min_samples': 80,
-            },
-        # simplification
-        'simplification': {
-            'max_distance': 0.01,
-            'max_time': 5,
-            },
-        # location
-        'location': {
-            'max_distance': 20, #Meters
-            'google_key': ''
-            },
-        'transportation': {
-            'remove_stops': False,
-            'min_time': 10, #Seconds
-            'classifier_path': None,
-            },
-        # trip learning
-        'trip_learning': {
-            'epsilon': 0.0
-            },
-        'trip_name_format': '%Y-%m-%d'
-        }
+    'input_path': None,
+    'dest_path': None,
+    'backup_path': None,
+    'dest_path': None,
+    'life_all': None,
+    'db': {
+        'host': None,
+        'port': None,
+        'name': None,
+        'user': None,
+        'pass': None
+    },
+    'preprocess': {
+        'max_acc': tt.preprocess.MAX_ACC
+    },
+    'smoothing': {
+        'use': True,
+        'algorithm': 'inverse',
+        'noise': 5
+    },
+    'segmentation': {
+        'use': True,
+        'epsilon': 0.15,
+        'min_samples': 80
+    },
+    'simplification': {
+        'max_distance': 0.01,
+        'max_time': 5
+    },
+    'location': {
+        'max_distance': 20,
+        'limit': 5,
+        'google_key': ''
+    },
+    'transportation': {
+        'remove_stops': False,
+        'min_time': 10,
+        'classifier_path': None
+    },
+    'trip_learning': {
+        'epsilon': 0.0,
+        'classifier_path': None,
+    },
+    'trip_name_format': '%Y-%m-%d'
+}
 
 def saveToFile(path, content):
     with open(path, "w") as f:
@@ -111,9 +105,9 @@ class ProcessingManager:
         self.config = dict(default_config)
         self.config.update(config)
 
-        clfPath = expanduser(self.config['transportation']['classifier_path'])
+        clfPath = self.config['transportation']['classifier_path']
         if clfPath:
-            self.clf = Classifier.load_from_file(clfPath)
+            self.clf = Classifier.load_from_file(expanduser(clfPath))
         else:
             self.clf = Classifier.create()
 
@@ -317,35 +311,26 @@ class ProcessingManager:
         # if not track.preprocessed:
         #     track.preprocess(max_acc=self.config['preprocess']['max_acc'])
 
-        def getGoogleLoc(point, key='', max_distance=20):
-            if not key:
-                return []
-
-            req = requests.get('https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%s,%s&radius=%s&key=%s' % (point.lat, point.lon, max_distance, key))
-            if req.status_code != 200:
-                return []
-            response = req.json()
-            results = response['results']
-            l = len(results)
-            return map(lambda (i, r): {
-                'label': r['name'],
-                'rank': (l-i)/float(l),
-                # 'vinicity': r['vinicity'] if 'vicinity' in r else '',
-                'types': r['types'],
-                'suggestion_type': 'GOOGLE' }, enumerate(results))
-
         c = self.config
+        c_loc = self.config['location']
 
-        def getLoc(point):
-            places = getGoogleLoc(point, key=c['location']['google_key'], max_distance=c['location']['max_distance'])
-            return tt.Location(places[0]['label'], point, other=places)
+        conn, cur = self.db_connect()
 
-        for segment in track.segments:
-            segment.location_from = getLoc(segment.points[0])
-            segment.location_to = getLoc(segment.points[-1])
+        def get_locations(point, radius):
+            if cur:
+                return db.queryLocations(cur, point.lat, point.lon, radius)
+            else:
+                return []
 
-        # track.inferLocation()
+        track.inferLocation(
+            get_locations,
+            max_distance=c_loc['max_distance'],
+            google_key=c_loc['google_key'],
+            limit=c_loc['limit']
+        )
         track.inferTransportationMode(self.clf, removeStops=c['transportation']['remove_stops'], dt_threshold=c['transportation']['min_time'])
+
+        self.db_dispose(conn, cur)
 
         return track
 
@@ -357,6 +342,11 @@ class ProcessingManager:
         else:
             return None, None
 
+    def db_dispose(self, conn, cur):
+        if conn and cur:
+            conn.commit()
+            cur.close()
+            conn.close()
 
     def annotateToNext(self, track, life):
         """Stores the track and dequeues another track to be

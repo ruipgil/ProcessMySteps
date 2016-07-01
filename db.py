@@ -3,6 +3,20 @@ import ppygis
 import datetime
 from tracktotrip import Segment, Point
 
+from sklearn.cluster import MeanShift, estimate_bandwidth
+
+def computeCluster(point, cluster):
+    X = map(lambda point: point.gen2arr(), cluster)
+    bandwidth = estimate_bandwidth(X, quantile=0.5, n_samples=2)
+
+    # ms = MeanShift(bandwidth=bandwidth, bin_seeding=True)
+    ms = MeanShift(bandwidth=bandwidth)
+    ms.fit(X)
+    labels = ms.labels_
+    cluster_centers = ms.cluster_centers_
+
+    return labels, cluster_centers
+
 def connectDB(host, name, user, port, password):
     try:
         if host != None and name != None and user != None and password != None:
@@ -51,9 +65,12 @@ def insertLocation(cur, label, point):
         centroid = ppygis.Geometry.read_ewkb(centroid)
         point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
 
-        # TODO
+        point_cluster, centoid = computeCluster(point, pointsFromDb(point_cluster))
+        # centroid = computeCentroidFromCluster(newCluster)
+        # point_cluster = dbPoints(newCluster)
+
         # centroid = computeCentroidWith(point, point_cluster)
-        point_cluster.points.append(ppygis.Point(point.lat, point.lon, 0, srid=4326))
+        # point_cluster.points.append(ppygis.Point(point.lat, point.lon, 0, srid=4326))
 
         cur.execute("""
                 UPDATE locations
@@ -246,4 +263,12 @@ def updateCanonicalTrip(cur, can_id, trip, mother_trip_id):
         """, (can_id, mother_trip_id))
 
     return
+
+def queryLocations(cur, lat, lon, dx):
+    cur.execute("""
+        SELECT label, centroid, point_cluster
+        FROM locations
+        WHERE ST_Distance_Sphere(centroid, ST_MakePoint(%s,%s)) <= %s
+        """, (lat, lon, dx))
+    return cur.fetchall()
 
