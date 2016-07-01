@@ -2,20 +2,7 @@ import psycopg2
 import ppygis
 import datetime
 from tracktotrip import Segment, Point
-
-from sklearn.cluster import MeanShift, estimate_bandwidth
-
-def computeCluster(point, cluster):
-    X = map(lambda point: point.gen2arr(), cluster)
-    bandwidth = estimate_bandwidth(X, quantile=0.5, n_samples=2)
-
-    # ms = MeanShift(bandwidth=bandwidth, bin_seeding=True)
-    ms = MeanShift(bandwidth=bandwidth)
-    ms.fit(X)
-    labels = ms.labels_
-    cluster_centers = ms.cluster_centers_
-
-    return labels, cluster_centers
+from tracktotrip.Location import updateLocationCentroid
 
 def connectDB(host, name, user, port, password):
     try:
@@ -64,19 +51,15 @@ def insertLocation(cur, label, point):
         _, centroid, point_cluster = cur.fetchone()
         centroid = ppygis.Geometry.read_ewkb(centroid)
         point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
+        point_cluster = pointsFromDb(point_cluster)
 
-        point_cluster, centoid = computeCluster(point, pointsFromDb(point_cluster))
-        # centroid = computeCentroidFromCluster(newCluster)
-        # point_cluster = dbPoints(newCluster)
-
-        # centroid = computeCentroidWith(point, point_cluster)
-        # point_cluster.points.append(ppygis.Point(point.lat, point.lon, 0, srid=4326))
+        centroid, newCluster = updateLocationCentroid(point, pointsFromDb(point_cluster))
 
         cur.execute("""
                 UPDATE locations
                 SET centroid=%s, point_cluster=%s
                 WHERE label=%s
-                """, (centroid.write_ewkb(), point_cluster.write_ewkb(), label))
+                """, (centroid.write_ewkb(), dbPoints(newCluster), label))
     else:
         # Creates new location
         cur.execute("""
@@ -142,7 +125,6 @@ def insertSegment(cur, segment):
 
     tstamps = map(lambda p: p.time, segment.points)
 
-    # TODO: timestamps
     cur.execute("""
             INSERT INTO trips (start_location, end_location, start_date, end_date, bounds, points, timestamps)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -173,7 +155,6 @@ def matchCanonicalTrip(cur, trip):
     Returns:
         Array of matched tracktotrip.Trip
     """
-    # TODO locations should also be the same?
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
         """ % trip.getBounds())
@@ -195,7 +176,6 @@ def matchCanonicalTripBounds(cur, bounds):
         Array of matched tracktotrip.Trip
     """
 
-    # TODO locations should also be the same?
     cur.execute("""
         SELECT can.canonical_id, can.points, COUNT(rels.trip)
         FROM canonical_trips AS can
