@@ -1,7 +1,7 @@
 import psycopg2
 import ppygis
 import datetime
-from tracktotrip import Segment, Point
+from tracktotrip import Segment, Point, defaults
 from tracktotrip.Location import updateLocationCentroid
 
 def connectDB(host, name, user, port, password):
@@ -40,7 +40,7 @@ def dbBounds(bound):
                 ppygis.Point(bound[2], bound[1], 0, srid=4336),
                 ppygis.Point(bound[2], bound[3], 0, srid=4336)])]).write_ewkb()
 
-def insertLocation(cur, label, point):
+def insertLocation(cur, label, point, max_distance=defaults.LOCATION_MAX_DISTANCE):
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
@@ -53,7 +53,7 @@ def insertLocation(cur, label, point):
         point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
         point_cluster = pointsFromDb(point_cluster)
 
-        centroid, newCluster = updateLocationCentroid(point, pointsFromDb(point_cluster))
+        centroid, newCluster = updateLocationCentroid(point, pointsFromDb(point_cluster), max_distance=max_distance)
 
         cur.execute("""
                 UPDATE locations
@@ -116,9 +116,9 @@ def insertStays(cur, trip, ids, life):
             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
             insert(trip_id, location, start_date, end_date)
 
-def insertSegment(cur, segment):
-    insertLocation(cur, segment.location_from.label, segment.pointAt(0))
-    insertLocation(cur, segment.location_to.label, segment.pointAt(-1))
+def insertSegment(cur, segment, loc_max_distance=defaults.LOCATION_MAX_DISTANCE):
+    insertLocation(cur, segment.location_from.label, segment.pointAt(0), max_distance=loc_max_distance)
+    insertLocation(cur, segment.location_to.label, segment.pointAt(-1), max_distance=loc_max_distance)
 
     def toTsmp(d):
         return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
@@ -251,4 +251,3 @@ def queryLocations(cur, lat, lon, dx):
         WHERE ST_Distance_Sphere(centroid, ST_MakePoint(%s,%s)) <= %s
         """, (lat, lon, dx))
     return cur.fetchall()
-

@@ -397,7 +397,7 @@ class ProcessingManager:
             trips_ids = []
             for trip in track.segments:
                 # To database
-                trip_id = db.insertSegment(cur, trip)
+                trip_id = db.insertSegment(cur, trip, loc_max_distance=self.config['location']['max_distance'])
                 trips_ids.append(trip_id)
 
                 # Build/learn canonical trip
