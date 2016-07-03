@@ -234,8 +234,9 @@ class ProcessingManager:
         elif step == Step.adjust:
             result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
-            t = track.inferLocation().inferTransportationMode()
-            return self.annotateToNext(t, life)
+            if not life:
+                life = track.toLIFE()
+            return self.annotateToNext(track, life)
         else:
             return None
 
@@ -424,6 +425,7 @@ class ProcessingManager:
                 'step': self.currentStep,
                 'queue': self.queue.items(), #map(lambda (date, tracks): { 'date': str(date), 'tracks': tracks}, self.queue.items()),
                 'track': self.currentTrack().toJSON(),
+                'life': self.currentTrack().toLIFE() if self.currentStep is Step.annotate else '',
                 'currentDay': self.currentDay
                 }
 
