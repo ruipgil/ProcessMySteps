@@ -3,6 +3,23 @@ import ppygis
 import datetime
 from tracktotrip import Segment, Point, defaults
 from tracktotrip.Location import updateLocationCentroid
+import life
+
+def load_from_life(cur, content, max_distance=defaults.LOCATION_MAX_DISTANCE):
+    l = life.Life().from_string(content)
+    # Insert places
+    for place, (lat, lon) in l.locations.items():
+        insertLocation(cur, place, Point(lat, lon), max_distance=max_distance)
+
+    # Insert stays
+    for day in l.days:
+        date = day.date
+        for span in day.spans:
+            start = datetime.datetime.strptime("%Y_%m_%d %h%M", "%s %s" % (date, span.start))
+            end = datetime.datetime.strptime("%Y_%m_%d %h%M", "%s %s" % (date, span.end))
+            if type(span.place) is str:
+                insertStay(cur, span.place, start, end)
+
 
 def connectDB(host, name, user, port, password):
     try:
@@ -86,35 +103,42 @@ def insertTrip(trip, life):
     for segment in trip.segments:
         ids.push(insertSegment(segment))
 
-    insertStays(trip, ids, life)
+    # insertStays(cur, trip, ids, life)
+    # load_from_life(cur, life)
+
+def insertStay(cur, label, start_date, end_date):
+    cur.execute("""
+        INSERT INTO stays(location_label, start_date, end_date)
+        VALUES (%s, %s, %s)
+        """, (label, start_date, end_date))
 
 
-def insertStays(cur, trip, ids, life):
-    def insert(trip_id, location, start_date, end_date):
-        cur.execute("""
-            INSERT INTO stays(trip_id, location_label, start_date, end_date)
-            VALUES (%s, %s, %s, %s)
-            """, (trip_id, location, start_date, end_date))
-
-    for i, segment in enumerate(trip.segments):
-        trip_id = ids[i]
-        if i == 0:
-            # Start of the day
-            end_date = segment.getStartTime()
-            start_date = datetime.datetime(end_date.year, end_date.month, end_date.day)
-            location = segment.location_from
-        else:
-            start_date = trip.segments[i - 1].getEndTime()
-            end_date = segment.getEndTime()
-            location = segment.location_from
-
-        insert(trip_id, location, start_date, end_date)
-
-        if i == len(trip.segments) - 1:
-            location = segment.location_to
-            start_date = segment.getEndTime()
-            end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
-            insert(trip_id, location, start_date, end_date)
+# def insertStays(cur, trip, ids, life):
+#     def insert(trip_id, location, start_date, end_date):
+#         cur.execute("""
+#             INSERT INTO stays(trip_id, location_label, start_date, end_date)
+#             VALUES (%s, %s, %s, %s)
+#             """, (trip_id, location, start_date, end_date))
+#
+#     for i, segment in enumerate(trip.segments):
+#         trip_id = ids[i]
+#         if i == 0:
+#             # Start of the day
+#             end_date = segment.getStartTime()
+#             start_date = datetime.datetime(end_date.year, end_date.month, end_date.day)
+#             location = segment.location_from
+#         else:
+#             start_date = trip.segments[i - 1].getEndTime()
+#             end_date = segment.getEndTime()
+#             location = segment.location_from
+#
+#         insert(trip_id, location, start_date, end_date)
+#
+#         if i == len(trip.segments) - 1:
+#             location = segment.location_to
+#             start_date = segment.getEndTime()
+#             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
+#             insert(trip_id, location, start_date, end_date)
 
 def insertSegment(cur, segment, loc_max_distance=defaults.LOCATION_MAX_DISTANCE):
     insertLocation(cur, segment.location_from.label, segment.pointAt(0), max_distance=loc_max_distance)

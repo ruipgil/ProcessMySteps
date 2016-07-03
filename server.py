@@ -100,5 +100,11 @@ def bulkProcess():
     manager.bulkProcess()
     return sendState()
 
+@app.route('/loadLIFE', methods=['POST'])
+def loadLIFE():
+    payload = request.data
+    manager.loadLIFE(payload)
+    return sendState()
+
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port, host='0.0.0.0')

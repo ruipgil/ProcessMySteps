@@ -395,6 +395,9 @@ class ProcessingManager:
         conn, cur = self.db_connect()
 
         if conn and cur:
+
+            db.load_from_life(cur, content, max_distance=self.config['location']['max_distance'])
+
             trips_ids = []
             for trip in track.segments:
                 # To database
@@ -479,3 +482,8 @@ class ProcessingManager:
                 'weights': map(lambda v: v / totalWeights, weights)
                 }
 
+    def loadLIFE(self, content):
+        conn, cur = self.db_connect()
+        if cur:
+            db.load_from_life(cur, content, max_distance=self.config['location']['max_distance'])
+        self.db_dispose(conn, cur)
