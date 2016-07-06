@@ -116,7 +116,7 @@ class ProcessingManager:
         self.history = []
         self.reset()
         dbc = self.config['db']
-        db.checkConn(dbc['host'], dbc['name'], dbc['port'], dbc['user'], dbc['pass'])
+        db.checkConn(dbc['host'], dbc['name'], dbc['user'], dbc['port'], dbc['pass'])
 
     def listGpxs(self):
         """Lists gpx files in the INPUT_PATH, and their details
@@ -234,7 +234,7 @@ class ProcessingManager:
         elif step == Step.adjust:
             result = self.adjustToAnnotate(track)
         elif step == Step.annotate:
-            if not life:
+            if not life or len(life) == 0:
                 life = track.toLIFE()
             return self.annotateToNext(track, life)
         else:
@@ -253,9 +253,7 @@ class ProcessingManager:
             # adjust -> annotate
             self.process({ 'changes': [], 'LIFE': '' })
             # annotate -> store
-            # TODO: LIFE
-            self.process({ 'changes': [], 'LIFE': 'TODO' })
-        print('Bulk process')
+            self.process({ 'changes': [], 'LIFE': '' })
 
     def loadGpx(self, f):
         """Loads the current file as a GPX
@@ -337,7 +335,7 @@ class ProcessingManager:
 
     def db_connect(self):
         dbc = self.config['db']
-        conn = db.connectDB(dbc['host'], dbc['name'], dbc['port'], dbc['user'], dbc['pass'])
+        conn = db.connectDB(dbc['host'], dbc['name'], dbc['user'], dbc['port'], dbc['pass'])
         if conn:
             return conn, conn.cur()
         else:
@@ -375,7 +373,9 @@ class ProcessingManager:
         # Export trip to GPX
         saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
 
-        # TODO: update classifier
+        if not self.is_bulk_processing:
+            for segment in track.segments:
+                self.clf.learn(segment.points)
 
         # To LIFE
         if self.config['life_path']:
