@@ -35,8 +35,7 @@ default_config = {
         'min_samples': 80
     },
     'simplification': {
-        'max_distance': 0.01,
-        'max_time': 5
+        'dist_threshold': 3
     },
     'location': {
         'max_distance': 20,
@@ -289,8 +288,7 @@ class ProcessingManager:
             smooth_noise=c['smoothing']['noise'],
             seg_eps=c['segmentation']['epsilon'],
             seg_min_samples=c['segmentation']['min_samples'],
-            simplify_max_distance=c['simplification']['max_distance'],
-            simplify_max_time=c['simplification']['max_time'],
+            simplify_dist_threshold=c['simplification']['dist_threshold'],
             file_format=c['trip_name_format']
         )
 
