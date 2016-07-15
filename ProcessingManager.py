@@ -22,7 +22,7 @@ default_config = {
         'pass': None
     },
     'preprocess': {
-        'max_acc': tt.preprocess.MAX_ACC
+        'max_acc': tt.defaults.PREPROCESS_MAX_ACC
     },
     'smoothing': {
         'use': True,
@@ -32,10 +32,10 @@ default_config = {
     'segmentation': {
         'use': True,
         'epsilon': 0.15,
-        'min_samples': 80
+        'min_time': 80
     },
     'simplification': {
-        'dist_threshold': 3
+        'dist_threshold': 0.3
     },
     'location': {
         'max_distance': 20,
@@ -45,7 +45,7 @@ default_config = {
     'transportation': {
         'remove_stops': False,
         'min_time': 10,
-        'classifier_path': None
+        'classifier_path': 'classifier.data'# None
     },
     'trip_learning': {
         'epsilon': 0.0,
@@ -106,7 +106,7 @@ class ProcessingManager:
 
         clfPath = self.config['transportation']['classifier_path']
         if clfPath:
-            self.clf = Classifier.load_from_file(expanduser(clfPath))
+            self.clf = Classifier.load_from_file(open(expanduser(clfPath), 'r'))
         else:
             self.clf = Classifier.create()
 
@@ -287,7 +287,7 @@ class ProcessingManager:
             smooth_strategy=c['smoothing']['algorithm'],
             smooth_noise=c['smoothing']['noise'],
             seg_eps=c['segmentation']['epsilon'],
-            seg_min_samples=c['segmentation']['min_samples'],
+            seg_min_time=c['segmentation']['min_time'],
             simplify_dist_threshold=c['simplification']['dist_threshold'],
             file_format=c['trip_name_format']
         )
