@@ -1,6 +1,6 @@
 import tracktotrip as tt
 from tracktotrip.transportationMode import Classifier
-import db
+from processmysteps import db
 from os import listdir, stat, rename
 from os.path import join, expanduser
 import json

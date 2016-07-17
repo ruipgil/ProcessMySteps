@@ -1,8 +1,9 @@
+import datetime
 import psycopg2
 import ppygis
-import datetime
-from tracktotrip import Segment, Point, defaults
+from tracktotrip import Segment
 from tracktotrip.Location import updateLocationCentroid
+import tracktotrip.defaults as defaults
 import life
 
 def load_from_life(cur, content, max_distance=defaults.LOCATION_MAX_DISTANCE):

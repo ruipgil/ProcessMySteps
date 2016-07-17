@@ -1,6 +1,6 @@
 import argparse
-from ProcessingManager import ProcessingManager
 from flask import Flask, request, jsonify
+from processmysteps.process_manager import ProcessingManager
 # from flask.ext.socketio import SocketIO
 
 parser = argparse.ArgumentParser(description='Starts the server to process tracks')
