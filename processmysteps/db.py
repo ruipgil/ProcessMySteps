@@ -1,22 +1,26 @@
 import datetime
 import psycopg2
 import ppygis
-from tracktotrip import Segment
+from tracktotrip import Segment, Point
 from tracktotrip.location import update_location_centroid
-import life
+from .life import Life
 
 def load_from_life(cur, content, max_distance):
-    l = life.Life().from_string(content)
+    print(content)
+    l = Life()
+    l.from_string(content.encode('utf8').split('\n'))
+    print(l)
     # Insert places
     for place, (lat, lon) in l.locations.items():
-        insertLocation(cur, place, Point(lat, lon), max_distance=max_distance)
+        insertLocation(cur, place, Point(lat, lon, None), max_distance=max_distance)
 
     # Insert stays
     for day in l.days:
         date = day.date
         for span in day.spans:
-            start = datetime.datetime.strptime("%Y_%m_%d %h%M", "%s %s" % (date, span.start))
-            end = datetime.datetime.strptime("%Y_%m_%d %h%M", "%s %s" % (date, span.end))
+            print(span.start, span.end)
+            start = datetime.datetime.strptime("%s %02d%02d" % (date, span.start/60, span.start%60), "%Y_%m_%d %H%M")
+            end = datetime.datetime.strptime("%s %02d%02d" % (date, span.end/60, span.end%60), "%Y_%m_%d %H%M")
             if type(span.place) is str:
                 insertStay(cur, span.place, start, end)
 
@@ -43,7 +47,7 @@ def pointsFromDb(gis_points, timestamps=None):
     gis_points = ppygis.Geometry.read_ewkb(gis_points).points
     result = []
     for i, point in enumerate(gis_points):
-        result.append(Point(0, point.x, point.y, timestamps[i] if timestamps is not None else None))
+        result.append(Point(point.x, point.y, timestamps[i] if timestamps is not None else None))
     return result
 
 def dbPoints(points):
@@ -70,7 +74,8 @@ def insertLocation(cur, label, point, max_distance):
         point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
         point_cluster = pointsFromDb(point_cluster)
 
-        centroid, newCluster = updateLocationCentroid(point, pointsFromDb(point_cluster), max_distance=max_distance)
+        centroid, newCluster = update_location_centroid(point, pointsFromDb(point_cluster), max_distance=max_distance)
+        centroid = dbPoint(centroid)
 
         cur.execute("""
                 UPDATE locations
@@ -272,6 +277,6 @@ def queryLocations(cur, lat, lon, dx):
     cur.execute("""
         SELECT label, centroid, point_cluster
         FROM locations
-        WHERE ST_Distance_Sphere(centroid, ST_MakePoint(%s,%s)) <= %s
-        """, (lat, lon, dx))
+        WHERE ST_DWithin(centroid, %s, %s)
+        """, (dbPoint(Point(lat, lon, None)), dx))
     return cur.fetchall()
