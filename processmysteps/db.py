@@ -2,11 +2,10 @@ import datetime
 import psycopg2
 import ppygis
 from tracktotrip import Segment
-from tracktotrip.Location import updateLocationCentroid
-import tracktotrip.defaults as defaults
+from tracktotrip.location import update_location_centroid
 import life
 
-def load_from_life(cur, content, max_distance=defaults.LOCATION_MAX_DISTANCE):
+def load_from_life(cur, content, max_distance):
     l = life.Life().from_string(content)
     # Insert places
     for place, (lat, lon) in l.locations.items():
@@ -58,7 +57,7 @@ def dbBounds(bound):
                 ppygis.Point(bound[2], bound[1], 0, srid=4336),
                 ppygis.Point(bound[2], bound[3], 0, srid=4336)])]).write_ewkb()
 
-def insertLocation(cur, label, point, max_distance=defaults.LOCATION_MAX_DISTANCE):
+def insertLocation(cur, label, point, max_distance):
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
@@ -141,7 +140,7 @@ def insertStay(cur, label, start_date, end_date):
 #             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
 #             insert(trip_id, location, start_date, end_date)
 
-def insertSegment(cur, segment, loc_max_distance=defaults.LOCATION_MAX_DISTANCE):
+def insertSegment(cur, segment, loc_max_distance):
     insertLocation(cur, segment.location_from.label, segment.pointAt(0), max_distance=loc_max_distance)
     insertLocation(cur, segment.location_to.label, segment.pointAt(-1), max_distance=loc_max_distance)
 

@@ -1,5 +1,5 @@
 import tracktotrip as tt
-from tracktotrip.transportationMode import Classifier
+from tracktotrip.classifier import Classifier
 from processmysteps import db
 from os import listdir, stat, rename
 from os.path import join, expanduser
@@ -22,7 +22,7 @@ default_config = {
         'pass': None
     },
     'preprocess': {
-        'max_acc': tt.defaults.PREPROCESS_MAX_ACC
+        'max_acc': 30.0
     },
     'smoothing': {
         'use': True,
@@ -179,7 +179,7 @@ class ProcessingManager:
             for g in gpxsToUse:
                 segs.extend(g.segments)
 
-            track = tt.Track(segments=segs)
+            track = tt.Track('', segments=segs)
             self.history = [track]
             self.currentStep = Step.preview
         else:
@@ -261,7 +261,7 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        return tt.Track.fromGPX(f)[0]
+        return tt.Track.from_gpx(f)[0]
 
     def previewToAdjust(self, track, changes):
         """Processes a track so that it becomes a trip
@@ -283,7 +283,8 @@ class ProcessingManager:
         if not track.preprocessed:
             track.preprocess(max_acc=c['preprocess']['max_acc'])
 
-        return track.toTrip(
+        return track.to_trip(
+            track.name,
             smooth_strategy=c['smoothing']['algorithm'],
             smooth_noise=c['smoothing']['noise'],
             seg_eps=c['segmentation']['epsilon'],
@@ -319,13 +320,16 @@ class ProcessingManager:
             else:
                 return []
 
-        track.inferLocation(
+        track.infer_location(
             get_locations,
             max_distance=c_loc['max_distance'],
             google_key=c_loc['google_key'],
             limit=c_loc['limit']
         )
-        track.inferTransportationMode(self.clf, removeStops=c['transportation']['remove_stops'], dt_threshold=c['transportation']['min_time'])
+        track.infer_transportation_mode(
+            self.clf,
+            c['transportation']['min_time']
+        )
 
         self.db_dispose(conn, cur)
 
@@ -425,8 +429,8 @@ class ProcessingManager:
         return {
                 'step': self.currentStep,
                 'queue': self.queue.items(), #map(lambda (date, tracks): { 'date': str(date), 'tracks': tracks}, self.queue.items()),
-                'track': self.currentTrack().toJSON(),
-                'life': self.currentTrack().toLIFE() if self.currentStep is Step.annotate else '',
+                'track': self.currentTrack().to_json(),
+                'life': self.currentTrack().to_life() if self.currentStep is Step.annotate else '',
                 'currentDay': self.currentDay
                 }
 

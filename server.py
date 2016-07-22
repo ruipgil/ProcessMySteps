@@ -1,7 +1,6 @@
 import argparse
 from flask import Flask, request, jsonify
 from processmysteps.process_manager import ProcessingManager
-# from flask.ext.socketio import SocketIO
 
 parser = argparse.ArgumentParser(description='Starts the server to process tracks')
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
@@ -15,8 +14,6 @@ parser.add_argument('--verbose', dest='verbose',
 parser.add_argument('--config', '-c', dest='config', metavar='c', type=str,
         help='configuration file')
 args = parser.parse_args()
-
-
 
 app = Flask(__name__)
 # socketio = SocketIO(app)
@@ -107,4 +104,4 @@ def loadLIFE():
     return sendState()
 
 if __name__ == '__main__':
-    app.run(debug=args.debug, port=args.port, host='0.0.0.0')
+    app.run(debug=False, port=args.port, host='0.0.0.0')
