@@ -5,22 +5,20 @@ from tracktotrip import Segment, Point
 from tracktotrip.location import update_location_centroid
 from .life import Life
 
-def load_from_life(cur, content, max_distance):
-    print(content)
+def load_from_life(cur, content, max_distance, min_samples):
     l = Life()
     l.from_string(content.encode('utf8').split('\n'))
-    print(l)
     # Insert places
     for place, (lat, lon) in l.locations.items():
-        insertLocation(cur, place, Point(lat, lon, None), max_distance=max_distance)
+        insertLocation(cur, place, Point(lat, lon, None), max_distance, min_samples)
 
     # Insert stays
     for day in l.days:
         date = day.date
         for span in day.spans:
-            print(span.start, span.end)
             start = datetime.datetime.strptime("%s %02d%02d" % (date, span.start/60, span.start%60), "%Y_%m_%d %H%M")
             end = datetime.datetime.strptime("%s %02d%02d" % (date, span.end/60, span.end%60), "%Y_%m_%d %H%M")
+
             if type(span.place) is str:
                 insertStay(cur, span.place, start, end)
 
@@ -61,7 +59,7 @@ def dbBounds(bound):
                 ppygis.Point(bound[2], bound[1], 0, srid=4336),
                 ppygis.Point(bound[2], bound[3], 0, srid=4336)])]).write_ewkb()
 
-def insertLocation(cur, label, point, max_distance):
+def insertLocation(cur, label, point, max_distance, min_samples):
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
@@ -71,17 +69,16 @@ def insertLocation(cur, label, point, max_distance):
         # Updates current location set of points and centroid
         _, centroid, point_cluster = cur.fetchone()
         centroid = ppygis.Geometry.read_ewkb(centroid)
-        point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
+        # point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
         point_cluster = pointsFromDb(point_cluster)
 
-        centroid, newCluster = update_location_centroid(point, pointsFromDb(point_cluster), max_distance=max_distance)
-        centroid = dbPoint(centroid)
+        centroid, newCluster = update_location_centroid(point, point_cluster, max_distance, min_samples)
 
         cur.execute("""
                 UPDATE locations
                 SET centroid=%s, point_cluster=%s
                 WHERE label=%s
-                """, (centroid.write_ewkb(), dbPoints(newCluster), label))
+                """, (dbPoint(centroid), dbPoints(newCluster), label))
     else:
         # Creates new location
         cur.execute("""
@@ -101,15 +98,7 @@ def insertTransportationMode(cur, tmode, trip_id, segment):
                 segment.points[fro].time,
                 segment.points[to].time,
                 fro, to,
-                dbBounds(segment.getBounds(fro, to))))
-
-def insertTrip(trip, life):
-    ids = []
-    for segment in trip.segments:
-        ids.push(insertSegment(segment))
-
-    # insertStays(cur, trip, ids, life)
-    # load_from_life(cur, life)
+                dbBounds(segment.bounds(fro, to))))
 
 def insertStay(cur, label, start_date, end_date):
     cur.execute("""
@@ -145,9 +134,9 @@ def insertStay(cur, label, start_date, end_date):
 #             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
 #             insert(trip_id, location, start_date, end_date)
 
-def insertSegment(cur, segment, loc_max_distance):
-    insertLocation(cur, segment.location_from.label, segment.pointAt(0), max_distance=loc_max_distance)
-    insertLocation(cur, segment.location_to.label, segment.pointAt(-1), max_distance=loc_max_distance)
+def insertSegment(cur, segment, loc_max_distance, min_samples):
+    insertLocation(cur, segment.location_from.label, segment.points[0], loc_max_distance, min_samples)
+    insertLocation(cur, segment.location_to.label, segment.points[-1], loc_max_distance, min_samples)
 
     def toTsmp(d):
         return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
@@ -163,7 +152,7 @@ def insertSegment(cur, segment, loc_max_distance):
                 segment.location_to.label,
                 segment.points[0].time,
                 segment.points[-1].time,
-                dbBounds(segment.getBounds()),
+                dbBounds(segment.bounds()),
                 dbPoints(segment.points),
                 tstamps
                 ))
@@ -186,7 +175,7 @@ def matchCanonicalTrip(cur, trip):
     """
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
-        """ % trip.getBounds())
+        """ % trip.bounds())
     results = cur.fetchall()
 
     can_trips = []
@@ -239,7 +228,7 @@ def insertCanonicalTrip(cur, can_trip, mother_trip_id):
         INSERT INTO canonical_trips (start_location, end_location, bounds, points)
         VALUES (%s, %s, %s, %s)
         RETURNING canonical_id
-        """, (can_trip.location_from.label, can_trip.location_to.label, dbBounds(can_trip.getBounds()), dbPoints(can_trip.points)))
+        """, (can_trip.location_from.label, can_trip.location_to.label, dbBounds(can_trip.bounds()), dbPoints(can_trip.points)))
     result = cur.fetchone()
     c_trip_id = result[0]
 
@@ -264,7 +253,7 @@ def updateCanonicalTrip(cur, can_id, trip, mother_trip_id):
         UPDATE canonical_trips
         SET bounds=%s, points=%s
         WHERE canonical_id=%s
-        """, (dbBounds(trip.getBounds()), dbPoints(trip.points), can_id))
+        """, (dbBounds(trip.bounds()), dbPoints(trip.points), can_id))
 
     cur.execute("""
         INSERT INTO canonical_trips_relations (canonical_trip, trip)

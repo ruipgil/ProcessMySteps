@@ -1,5 +1,6 @@
 import tracktotrip as tt
 from tracktotrip.classifier import Classifier
+from tracktotrip.learn_trip import learn_trip
 from processmysteps import db
 from os import listdir, stat, rename
 from os.path import join, expanduser
@@ -35,10 +36,12 @@ default_config = {
         'min_time': 80
     },
     'simplification': {
-        'dist_threshold': 0.3
+        'dist_threshold': 0.3,
+        'eps': 0.15
     },
     'location': {
         'max_distance': 20,
+        'min_samples': 2,
         'limit': 5,
         'google_key': ''
     },
@@ -56,7 +59,7 @@ default_config = {
 
 def saveToFile(path, content):
     with open(path, "w") as f:
-        f.write(content)
+        f.write(content.encode('utf-8'))
 
 TIME_RX = re.compile('\<time\>([^\<]+)\<\/time\>')
 def predictStartDate(filename):
@@ -108,8 +111,9 @@ class ProcessingManager:
         if clfPath:
             self.clf = Classifier.load_from_file(open(expanduser(clfPath), 'r'))
         else:
-            self.clf = Classifier.create()
+            self.clf = Classifier()
 
+        self.is_bulk_processing = False
         self.queue = {}
         self.currentStep = None
         self.history = []
@@ -227,7 +231,7 @@ class ProcessingManager:
         step = self.currentStep
         changes = data['changes']
         life = data['LIFE']
-        track = tt.Track.fromJSON(data['track']) if len(changes) > 0 else self.currentTrack().copy()
+        track = tt.Track.from_json(data['track']) if len(changes) > 0 else self.currentTrack().copy()
         if step == Step.preview:
             result = self.previewToAdjust(track, changes)
         elif step == Step.adjust:
@@ -246,6 +250,7 @@ class ProcessingManager:
         return result
 
     def bulkProcess(self):
+        self.is_bulk_processing = True
         while len(self.queue.values()) > 0:
             # preview -> adjust
             self.process({ 'changes': [], 'LIFE': '' })
@@ -253,6 +258,7 @@ class ProcessingManager:
             self.process({ 'changes': [], 'LIFE': '' })
             # annotate -> store
             self.process({ 'changes': [], 'LIFE': '' })
+        self.is_bulk_processing = False
 
     def loadGpx(self, f):
         """Loads the current file as a GPX
@@ -278,7 +284,6 @@ class ProcessingManager:
             A TrackToTrip.Track instance
         """
 
-        # TODO: use changes
         c = self.config
         if not track.preprocessed:
             track.preprocess(max_acc=c['preprocess']['max_acc'])
@@ -339,7 +344,7 @@ class ProcessingManager:
         dbc = self.config['db']
         conn = db.connectDB(dbc['host'], dbc['name'], dbc['user'], dbc['port'], dbc['pass'])
         if conn:
-            return conn, conn.cur()
+            return conn, conn.cursor()
         else:
             return None, None
 
@@ -370,14 +375,19 @@ class ProcessingManager:
         """
 
         # Backup
-        rename(self.currentFile['path'], join(expanduser(self.config['backup_path']), self.currentFile['name']))
+        # if self.config['backup_path']:
+        #     for gpx in self.queue[self.currentDay]:
+        #         from_path = gpx['path']
+        #         to_path = join(expanduser(self.config['backup_path']), gpx['name'])
+        #         rename(from_path, to_path)
 
         # Export trip to GPX
-        saveToFile(join(expanduser(self.config['output_path']), track.name), track.toGPX())
+        saveToFile(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
             for segment in track.segments:
-                self.clf.learn(segment.points)
+                # self.clf.learn(segment.points)
+                break
 
         # To LIFE
         if self.config['life_path']:
@@ -388,31 +398,39 @@ class ProcessingManager:
             else:
                 life_all_file = join(expanduser(self.config['life_path']), 'all.life')
 
-            with open(life_all_file, 'rw') as f:
-                content = f.read()
-                content = content + "\n\n"
-                content = life
-                f.write(content)
+            with open(life_all_file, 'a+') as f:
+                content = "\n\n" + life
+                f.write(content.encode('utf-8'))
 
         conn, cur = self.db_connect()
 
         if conn and cur:
 
-            db.load_from_life(cur, content, max_distance=self.config['location']['max_distance'])
+            db.load_from_life(
+                cur,
+                content,
+                self.config['location']['max_distance'],
+                self.config['location']['min_samples']
+            )
 
             trips_ids = []
             for trip in track.segments:
                 # To database
-                trip_id = db.insertSegment(cur, trip, loc_max_distance=self.config['location']['max_distance'])
+                trip_id = db.insertSegment(cur, trip, self.config['location']['max_distance'], self.config['location']['min_samples'])
                 trips_ids.append(trip_id)
 
                 # Build/learn canonical trip
                 canonicalTrips = db.matchCanonicalTrip(cur, trip)
-                insertFn = lambda (can_trip, mother_trip_id): db.insertCanonicalTrip(cur, can_trip, mother_trip_id)
-                updateFn = lambda (can_id, trip, mother_trip_id): db.updateCanonicalTrip(cur, can_id, trip, mother_trip_id)
-                tt.learn_trip(trip, trip_id, canonicalTrips, insertFn, updateFn)
 
-            db.insertStays(cur, trip, trips_ids, life)
+                def insert_can_trip(can_trip, mother_trip_id):
+                    db.insertCanonicalTrip(cur, can_trip, mother_trip_id)
+
+                def update_can_trip(can_id, trip, mother_trip_id):
+                    db.updateCanonicalTrip(cur, can_id, trip, mother_trip_id)
+
+                learn_trip(trip, trip_id, canonicalTrips, insert_can_trip, update_can_trip, self.config['simplification']['eps'])
+
+            # db.insertStays(cur, trip, trips_ids, life)
 
             conn.commit()
             cur.close()
@@ -467,8 +485,8 @@ class ProcessingManager:
         result = []
         weights = []
         totalWeights = 0.0
-        fromP = tt.Point(0, fromPoint['lat'], fromPoint['lon'], None)
-        toP = tt.Point(0, toPoint['lat'], toPoint['lon'], None)
+        fromP = tt.Point(fromPoint['lat'], fromPoint['lon'], None)
+        toP = tt.Point(toPoint['lat'], toPoint['lon'], None)
         # match points in lines
         for (tripId, trip, count) in canonicalTrips:
             fromIndex = trip.closestPointTo(fromP)
@@ -487,5 +505,5 @@ class ProcessingManager:
     def loadLIFE(self, content):
         conn, cur = self.db_connect()
         if cur:
-            db.load_from_life(cur, content, max_distance=self.config['location']['max_distance'])
+            db.load_from_life(cur, content, self.config['location']['max_distance'], self.config['location']['min_samples'])
         self.db_dispose(conn, cur)

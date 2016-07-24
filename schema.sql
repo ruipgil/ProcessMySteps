@@ -41,8 +41,9 @@ CREATE TABLE IF NOT EXISTS trips_transportation_modes (
 
 CREATE TABLE IF NOT EXISTS stays (
   stay_id SERIAL PRIMARY KEY,
-  trip_id SERIAL REFERENCES trips(trip_id),
-  location_label TEXT REFERENCES locations(label),
+  -- trip_id SERIAL REFERENCES trips(trip_id),
+  -- location_label TEXT REFERENCES locations(label),
+  location_label TEXT NOT NULL,
   start_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
   end_date TIMESTAMP WITHOUT TIME ZONE NOT NULL
 );
