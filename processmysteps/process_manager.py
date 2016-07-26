@@ -7,15 +7,13 @@ import json
 from os import listdir, stat, rename
 from os.path import join, expanduser
 from collections import OrderedDict
-
-import numpy as np
 import tracktotrip as tt
 from tracktotrip.classifier import Classifier
-from tracktotrip.learn_trip import learn_trip
-from tracktotrip.transportation_mode import extract_features
+from tracktotrip.learn_trip import learn_trip, complete_trip
+from tracktotrip.transportation_mode import learn_transportation_mode
 from processmysteps import db
 
-from .default_config import default_config
+from .default_config import CONFIG
 
 def save_to_file(path, content, mode="w"):
     """ Saves content to file
@@ -28,7 +26,7 @@ def save_to_file(path, content, mode="w"):
     with open(path, mode) as dest_file:
         dest_file.write(content.encode('utf-8'))
 
-TIME_RX = re.compile('\<time\>([^\<]+)\<\/time\>')
+TIME_RX = re.compile(r'\<time\>([^\<]+)\<\/time\>')
 def predict_start_date(filename):
     """ Predicts the start date of a GPX file
 
@@ -127,7 +125,7 @@ class ProcessingManager(object):
     def __init__(self, config_file):
         with open(expanduser(config_file), 'r') as config_file:
             config = json.loads(config_file.read())
-        self.config = dict(default_config)
+        self.config = dict(CONFIG)
         self.config.update(config)
 
         clf_path = self.config['transportation']['classifier_path']
@@ -238,6 +236,8 @@ class ProcessingManager(object):
         self.next_day(delete=False)
 
     def restore(self):
+        """ Backs down a pass
+        """
         if self.current_step != Step.done and self.current_step != Step.preview:
             self.current_step = Step.prev(self.current_step)
             self.history.pop()
@@ -260,7 +260,7 @@ class ProcessingManager(object):
             track = self.current_track().copy()
 
         if step == Step.preview:
-            result = self.preview_to_adjust(track, changes)
+            result = self.preview_to_adjust(track)#, changes)
         elif step == Step.adjust:
             result = self.adjust_to_annotate(track)
         elif step == Step.annotate:
@@ -289,7 +289,7 @@ class ProcessingManager(object):
             self.process({'changes': [], 'LIFE': ''})
         self.is_bulk_processing = False
 
-    def preview_to_adjust(self, track, changes):
+    def preview_to_adjust(self, track):
         """ Processes a track so that it becomes a trip
 
         More information in `tracktotrip.Track`'s `to_trip` method
@@ -389,38 +389,25 @@ class ProcessingManager(object):
         """
 
         # Backup
-        # if self.config['backup_path']:
-        #     for gpx in self.queue[self.current_day]:
-        #         from_path = gpx['path']
-        #         to_path = join(expanduser(self.config['backup_path']), gpx['name'])
-        #         rename(from_path, to_path)
+        if self.config['backup_path']:
+            for gpx in self.queue[self.current_day]:
+                from_path = gpx['path']
+                to_path = join(expanduser(self.config['backup_path']), gpx['name'])
+                rename(from_path, to_path)
 
         # Export trip to GPX
         save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
-            for segment in track.segments:
-                tmodes = segment.transportation_modes
-                points = segment.points
-                features = []
-                labels = []
-
-                for tmode in tmodes:
-                    points_part = points[tmode['from']:tmode['to']]
-                    features.append(extract_features(points_part, self.clf.feature_length/2))
-                    labels.append(tmode['label'])
-
-                self.clf.learn(features, labels)
+            learn_transportation_mode(track, self.clf)
 
         # To LIFE
         if self.config['life_path']:
             save_to_file(join(expanduser(self.config['life_path']), track.name), life)
-
             if self.config['life_all']:
                 life_all_file = expanduser(self.config['life_all'])
             else:
                 life_all_file = join(expanduser(self.config['life_path']), 'all.life')
-
             save_to_file(life_all_file, "\n\n%s" % life, mode='a+')
 
         conn, cur = self.db_connect()
@@ -524,14 +511,16 @@ class ProcessingManager(object):
         Args:
             data (:obj:`dict`): Requires keys 'from' and 'to', which should countain
                 point representations with 'lat' and 'lon'.
+            from_point (:obj:`tracktotrip.Point`): with keys lat and lon
+            to_point (:obj:`tracktotrip.Point`): with keys lat and lon
         Returns:
             :obj:`tracktotrip.Track`
         """
         b_box = (
-            min(from_point['lat'], to_point['lat']),
-            min(from_point['lon'], to_point['lon']),
-            max(from_point['lat'], to_point['lat']),
-            max(from_point['lon'], to_point['lon'])
+            min(from_point.lat, to_point.lat),
+            min(from_point.lon, to_point.lon),
+            max(from_point.lat, to_point.lat),
+            max(from_point.lon, to_point.lon)
         )
 
         conn, cur = self.db_connect()
@@ -540,25 +529,7 @@ class ProcessingManager(object):
             canonical_trips = db.match_canonical_trip_bounds(cur, b_box)
             db.dispose(conn, cur)
 
-        result = []
-        weights = []
-        total_weights = 0.0
-        from_point = tt.Point(from_point['lat'], from_point['lon'], None)
-        to_point = tt.Point(to_point['lat'], to_point['lon'], None)
-        # match points in lines
-        for (_, trip, count) in canonical_trips:
-            from_index = trip.closest_point_to(from_point)
-            to_index = trip.closest_point_to(to_point)
-            if from_index != to_index and from_index != -1 and to_index != -1:
-                trip_slice = trip.slice(from_index, to_index)
-                result.append([[p.lat, p.lon] for p in trip_slice.points])
-                weights.append(count)
-                total_weights = total_weights + count
-
-        return {
-            'possibilities': result,
-            'weights': np.array(weights) / total_weights
-        }
+        return complete_trip(canonical_trips, from_point, to_point)
 
     def load_life(self, content):
         """ Adds LIFE content to the database

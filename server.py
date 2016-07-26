@@ -5,6 +5,7 @@ Spawns a server that coodinates the operations
 """
 import argparse
 from flask import Flask, request, jsonify
+from tracktotrip import Point
 from processmysteps.process_manager import ProcessingManager
 
 parser = argparse.ArgumentParser(description='Starts the server to process tracks')
@@ -90,8 +91,8 @@ def complete_trip():
         :obj:`flask.response`
     """
     payload = request.get_json(force=True)
-    from_point = payload['from']
-    to_point = payload['to']
+    from_point = Point.from_json(payload['from'])
+    to_point = Point.from_json(payload['to'])
     return set_headers(jsonify(manager.complete_trip(from_point, to_point)))
 
 @app.route('/config', methods=['POST'])

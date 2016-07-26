@@ -1,6 +1,9 @@
-default_config = {
+"""
+Base line settings
+"""
+
+CONFIG = {
     'input_path': None,
-    'dest_path': None,
     'backup_path': None,
     'dest_path': None,
     'life_all': None,
