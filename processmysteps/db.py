@@ -1,65 +1,173 @@
+"""
+Database related functions
+"""
 import datetime
-import psycopg2
 import ppygis
+import psycopg2
+from psycopg2.extensions import AsIs, adapt, register_adapter
 from tracktotrip import Segment, Point
 from tracktotrip.location import update_location_centroid
 from .life import Life
 
-def load_from_life(cur, content, max_distance, min_samples):
-    l = Life()
-    l.from_string(content.encode('utf8').split('\n'))
-    # Insert places
-    for place, (lat, lon) in l.locations.items():
-        insertLocation(cur, place, Point(lat, lon, None), max_distance, min_samples)
+def adapt_point(point):
+    """ Adapts a `tracktotrip.Point` to use with `psycopg` methods
 
-    # Insert stays
-    for day in l.days:
-        date = day.date
-        for span in day.spans:
-            start = datetime.datetime.strptime("%s %02d%02d" % (date, span.start/60, span.start%60), "%Y_%m_%d %H%M")
-            end = datetime.datetime.strptime("%s %02d%02d" % (date, span.end/60, span.end%60), "%Y_%m_%d %H%M")
+    Params:
+        points (:obj:`tracktotrip.Point`)
+    """
+    point = ppygis.Point(point.lat, point.lon, 0, srid=4326)
+    return AsIs(adapt(point.write_ewkb()).getquoted())
 
-            if type(span.place) is str:
-                insertStay(cur, span.place, start, end)
+def to_point(gis_point, time=None):
+    """ Creates from raw ppygis representation
 
+    Args:
+        gis_point
+        timestamp (:obj:`datatime.datetime`, optional): timestamp to use
+            Defaults to none (point will have empty timestamp)
+    Returns:
+        :obj:`tracktotrip.Point`
+    """
+    gis_point = ppygis.Geometry.read_ewkb(gis_point)
+    return Point(gis_point.x, gis_point.y, time)
 
-def connectDB(host, name, user, port, password):
-    try:
-        if host != None and name != None and user != None and password != None:
-            return psycopg2.connect("host=%s dbname=%s user=%s password=%s port=%s" % (host, name, user, password, port))
-    except:
-        return None
-    return None
+def to_segment(gis_points, timestamps=None):
+    """ Creates from raw ppygis representation
 
-def checkConn(host, name, user, port, password):
-    if connectDB(host, name, user, port, password) is not None:
-        print("Connected with DB")
-    else:
-        print("Could not connect with DB")
-        print("host=%s dbname=%s user=%s password=%s" % (host, name, user, password))
-
-def dbPoint(point):
-    return ppygis.Point(point.lat, point.lon, 0, srid=4326).write_ewkb()
-
-def pointsFromDb(gis_points, timestamps=None):
+    Args:
+        gis_points
+        timestamps (:obj:`list` of :obj:`datatime.datetime`, optional): timestamps to use
+            Defaults to none (all points will have empty timestamps)
+    Returns:
+        :obj:`tracktotrip.Segment`
+    """
     gis_points = ppygis.Geometry.read_ewkb(gis_points).points
     result = []
     for i, point in enumerate(gis_points):
-        result.append(Point(point.x, point.y, timestamps[i] if timestamps is not None else None))
-    return result
+        tmstmp = timestamps[i] if timestamps is not None else None
+        result.append(Point(point.x, point.y, tmstmp))
+    return Segment(result)
 
-def dbPoints(points):
-    return ppygis.LineString(map(lambda p: ppygis.Point(p.lat, p.lon, 0, srid=4326), points), 4326).write_ewkb()
+def adapt_segment(segment):
+    """ Adapts a `tracktotrip.Segment` to use with `psycopg` methods
 
-def dbBounds(bound):
-    return ppygis.Polygon([
-        ppygis.LineString(
-            [   ppygis.Point(bound[0], bound[1], 0, srid=4336),
-                ppygis.Point(bound[0], bound[3], 0, srid=4336),
-                ppygis.Point(bound[2], bound[1], 0, srid=4336),
-                ppygis.Point(bound[2], bound[3], 0, srid=4336)])]).write_ewkb()
+    Args:
+        segment (:obj:`tracktotrip.Segment`)
+    """
+    points = [ppygis.Point(p.lat, p.lon, 0, srid=4326) for p in segment.points]
+    return AsIs(adapt(ppygis.LineString(points).write_ewkb()).getquoted())
 
-def insertLocation(cur, label, point, max_distance, min_samples):
+
+register_adapter(Point, adapt_point)
+register_adapter(Segment, adapt_segment)
+
+def span_date_to_datetime(date, minutes):
+    """ Converts date string and minutes to datetime
+
+    Args:
+        date (str): Date in the `%Y_%m_%d` format
+        minutes (int): Minutes since midnight
+    Returns:
+        :obj:`datetime.datetime`
+    """
+    date_format = "%Y_%m_%d %H%M"
+    str_date = "%s %02d%02d" % (date, minutes/60, minutes%60)
+    return datetime.datetime.strptime(str_date, date_format)
+
+def load_from_life(cur, content, max_distance, min_samples):
+    """ Uses a LIFE formated string to populate the database
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        content (str): LIFE formatted string
+        max_distance (float): Max location distance. See
+            `tracktotrip.location.update_location_centroid`
+        min_samples (float): Minimum samples requires for location.  See
+            `tracktotrip.location.update_location_centroid`
+    """
+    life = Life()
+    life.from_string(content.encode('utf8').split('\n'))
+
+    # Insert canonical places
+    for place, (lat, lon) in life.locations.items():
+        insert_location(cur, place, Point(lat, lon, None), max_distance, min_samples)
+
+    # Insert stays
+    for day in life.days:
+        date = day.date
+        for span in day.spans:
+            start = span_date_to_datetime(date, span.start)
+            end = span_date_to_datetime(date, span.end)
+
+            if isinstance(span.place, str):
+                insert_stay(cur, span.place, start, end)
+
+
+def connect_db(host, name, user, port, password):
+    """ Connects to database
+
+    Args:
+        host (str)
+        name (str)
+        user (str)
+        port (str)
+        password (str)
+    Returns:
+        :obj:`psycopg2.connection` or None
+    """
+    try:
+        if host != None and name != None and user != None and password != None:
+            return psycopg2.connect(
+                host=host,
+                database=name,
+                user=user,
+                password=password,
+                port=port
+            )
+    except psycopg2.Error:
+        pass
+    return None
+
+def dispose(conn, cur):
+    """ Disposes a connection
+
+    Args:
+        conn (:obj:`psycopg2.connection`): Connection
+        cur (:obj:`psycopg2.cursor`): Cursor
+    """
+    if conn:
+        conn.commit()
+        if cur:
+            cur.close()
+        conn.close()
+    elif cur:
+        cur.close()
+
+
+def gis_bounds(bound):
+    """ Converts bounds to its representation
+    """
+    points = [
+        ppygis.Point(bound[0], bound[1], 0, srid=4336),
+        ppygis.Point(bound[0], bound[3], 0, srid=4336),
+        ppygis.Point(bound[2], bound[1], 0, srid=4336),
+        ppygis.Point(bound[2], bound[3], 0, srid=4336)
+    ]
+    return ppygis.Polygon([ppygis.LineString(points)]).write_ewkb()
+
+def insert_location(cur, label, point, max_distance, min_samples):
+    """ Inserts a location into the database
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        label (str): Location's name
+        point (:obj:`Point`): Position marked with current label
+        max_distance (float): Max location distance. See
+            `tracktotrip.location.update_location_centroid`
+        min_samples (float): Minimum samples requires for location.  See
+            `tracktotrip.location.update_location_centroid`
+    """
+
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
@@ -68,110 +176,120 @@ def insertLocation(cur, label, point, max_distance, min_samples):
     if cur.rowcount > 0:
         # Updates current location set of points and centroid
         _, centroid, point_cluster = cur.fetchone()
-        centroid = ppygis.Geometry.read_ewkb(centroid)
-        # point_cluster = ppygis.Geometry.read_ewkb(point_cluster)
-        point_cluster = pointsFromDb(point_cluster)
+        centroid = to_point(centroid)
+        point_cluster = to_segment(point_cluster).points
+        # centroid = ppygis.Geometry.read_ewkb(centroid)
+        # point_cluster = pointsFromDb(point_cluster)
 
-        centroid, newCluster = update_location_centroid(point, point_cluster, max_distance, min_samples)
+        centroid, point_cluster = update_location_centroid(
+            point,
+            point_cluster,
+            max_distance,
+            min_samples
+        )
 
         cur.execute("""
                 UPDATE locations
                 SET centroid=%s, point_cluster=%s
                 WHERE label=%s
-                """, (dbPoint(centroid), dbPoints(newCluster), label))
+                """, (centroid, Segment(point_cluster), label))
     else:
         # Creates new location
         cur.execute("""
                 INSERT INTO locations (label, centroid, point_cluster)
                 VALUES (%s, %s, %s)
-                """, (label, dbPoint(point), dbPoints([point])))
+                """, (label, point, Segment([point])))
 
-def insertTransportationMode(cur, tmode, trip_id, segment):
+def insert_transportation_mode(cur, tmode, trip_id, segment):
+    """ Inserts transportation mode in the database
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        tmode (:obj:`dict`): transportation mode, with keys: label, from and to
+        trip_id (int): Id of the trip that generated the current tranportation mode
+        segment (:obj:`tracktotrip.Segment`): Segment that generated the current transportation mode
+    """
     label = tmode['label']
-    fro = tmode['from']
-    to = tmode['to']
+    from_index = tmode['from']
+    to_index = tmode['to']
+
     cur.execute("""
             INSERT INTO trips_transportation_modes(trip_id, label, start_date, end_date, start_index, end_index, bounds)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (   trip_id, label,
-                segment.points[fro].time,
-                segment.points[to].time,
-                fro, to,
-                dbBounds(segment.bounds(fro, to))))
+            """, (
+                trip_id,
+                label,
+                segment.points[from_index].time,
+                segment.points[to_index].time,
+                from_index,
+                to_index,
+                gis_bounds(segment.bounds(from_index, to_index))
+            ))
 
-def insertStay(cur, label, start_date, end_date):
+def insert_stay(cur, label, start_date, end_date):
+    """ Inserts stay in the database
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        label (str): Location
+        start_date (:obj:`datetime.datetime`)
+        end_date (:obj:`datetime.datetime`)
+    """
+
     cur.execute("""
         INSERT INTO stays(location_label, start_date, end_date)
         VALUES (%s, %s, %s)
         """, (label, start_date, end_date))
 
+def insert_segment(cur, segment, max_distance, min_samples):
+    """ Inserts segment in the database
 
-# def insertStays(cur, trip, ids, life):
-#     def insert(trip_id, location, start_date, end_date):
-#         cur.execute("""
-#             INSERT INTO stays(trip_id, location_label, start_date, end_date)
-#             VALUES (%s, %s, %s, %s)
-#             """, (trip_id, location, start_date, end_date))
-#
-#     for i, segment in enumerate(trip.segments):
-#         trip_id = ids[i]
-#         if i == 0:
-#             # Start of the day
-#             end_date = segment.getStartTime()
-#             start_date = datetime.datetime(end_date.year, end_date.month, end_date.day)
-#             location = segment.location_from
-#         else:
-#             start_date = trip.segments[i - 1].getEndTime()
-#             end_date = segment.getEndTime()
-#             location = segment.location_from
-#
-#         insert(trip_id, location, start_date, end_date)
-#
-#         if i == len(trip.segments) - 1:
-#             location = segment.location_to
-#             start_date = segment.getEndTime()
-#             end_date = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, 0)
-#             insert(trip_id, location, start_date, end_date)
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        segment (:obj:`tracktotrip.Segment`): Segment to insert
+        max_distance (float): Max location distance. See
+            `tracktotrip.location.update_location_centroid`
+        min_samples (float): Minimum samples requires for location.  See
+            `tracktotrip.location.update_location_centroid`
+    Returns:
+        int: Segment id
+    """
+    insert_location(cur, segment.location_from.label, segment.points[0], max_distance, min_samples)
+    insert_location(cur, segment.location_to.label, segment.points[-1], max_distance, min_samples)
 
-def insertSegment(cur, segment, loc_max_distance, min_samples):
-    insertLocation(cur, segment.location_from.label, segment.points[0], loc_max_distance, min_samples)
-    insertLocation(cur, segment.location_to.label, segment.points[-1], loc_max_distance, min_samples)
+    # def toTsmp(d):
+    #     return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
 
-    def toTsmp(d):
-        return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
-
-    tstamps = map(lambda p: p.time, segment.points)
+    tstamps = [p.time for p in segment.points]
 
     cur.execute("""
             INSERT INTO trips (start_location, end_location, start_date, end_date, bounds, points, timestamps)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING trip_id
-            """,
-            (   segment.location_from.label,
+            """, (
+                segment.location_from.label,
                 segment.location_to.label,
                 segment.points[0].time,
                 segment.points[-1].time,
-                dbBounds(segment.bounds()),
-                dbPoints(segment.points),
+                gis_bounds(segment.bounds()),
+                segment,
                 tstamps
-                ))
+            ))
     trip_id = cur.fetchone()
     trip_id = trip_id[0]
 
     for tmode in segment.transportation_modes:
-        insertTransportationMode(cur, tmode, trip_id, segment)
+        insert_transportation_mode(cur, tmode, trip_id, segment)
 
     return trip_id
 
-def matchCanonicalTrip(cur, trip):
-    """Tries to match canonical trips, with
-    a bounding box
+def match_canonical_trip(cur, trip):
+    """ Queries database for canonical trips with bounding boxes that intersect the bounding
+        box of the given trip
 
     Args:
-        trip: tracktotrip.Track
-    Returns:
-        Array of matched tracktotrip.Trip
+        cur (:obj:`psycopg2.cursor`)
+        trip (:obj:`tracktotrip.Segment`): Trip to match
     """
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
@@ -180,20 +298,22 @@ def matchCanonicalTrip(cur, trip):
 
     can_trips = []
     for (canonical_id, points) in results:
-        can_trips.append((canonical_id, Segment(points=pointsFromDb(points))))
+        segment = to_segment(points)
+        can_trips.append((canonical_id, segment))
 
     return can_trips
 
-def matchCanonicalTripBounds(cur, bounds):
-    """Tries to match canonical trips, with
-    a bounding box
+def match_canonical_trip_bounds(cur, bounds):
+    """ Queries database for canonical trips with bounding boxes that intersect the bounding
+        box of the given trip
 
     Args:
-        trip: tracktotrip.Track
+        cur (:obj:`psycopg2.cursor`)
+        trip (:obj:`tracktotrip.Segment`): Trip to match
     Returns:
-        Array of matched tracktotrip.Trip
+        :obj:`list` of (int, :obj:`tracktotrip.Segment`, int): List of tuples with the id of
+            the canonical trip, the segment representation and the number of times it appears
     """
-
     cur.execute("""
         SELECT can.canonical_id, can.points, COUNT(rels.trip)
         FROM canonical_trips AS can
@@ -206,29 +326,35 @@ def matchCanonicalTripBounds(cur, bounds):
 
     can_trips = []
     for (canonical_id, points, count) in results:
-        can_trips.append((canonical_id, Segment(points=pointsFromDb(points)), count))
+        segment = to_segment(points)
+        can_trips.append((canonical_id, segment, count))
 
     return can_trips
 
-def insertCanonicalTrip(cur, can_trip, mother_trip_id):
-    """Inserts a new canonical trip into the database
+def insert_canonical_trip(cur, can_trip, mother_trip_id):
+    """ Inserts a new canonical trip into the database
 
     It also creates a relation between the trip that originated
     the canonical representation and the representation
 
     Args:
-        can_trip: tracktotrip.Segment, canonical trip
-        mother_trip_id: NUmber, id of the trip that originated
-            the canonical representation
+        cur (:obj:`psycopg2.cursor`)
+        can_trip (:obj:`tracktotrip.Segment`): Canonical trip
+        mother_trip_id (int): Id of the trip that originated the canonical representation
     Returns:
-        Number, canonical trip id
+        int: Canonical trip id
     """
 
     cur.execute("""
         INSERT INTO canonical_trips (start_location, end_location, bounds, points)
         VALUES (%s, %s, %s, %s)
         RETURNING canonical_id
-        """, (can_trip.location_from.label, can_trip.location_to.label, dbBounds(can_trip.bounds()), dbPoints(can_trip.points)))
+        """, (
+            can_trip.location_from.label,
+            can_trip.location_to.label,
+            gis_bounds(can_trip.bounds()),
+            Segment(can_trip.points)
+        ))
     result = cur.fetchone()
     c_trip_id = result[0]
 
@@ -239,33 +365,45 @@ def insertCanonicalTrip(cur, can_trip, mother_trip_id):
 
     return c_trip_id
 
-def updateCanonicalTrip(cur, can_id, trip, mother_trip_id):
-    """Updates a canonical trip
+def update_canonical_trip(cur, can_id, trip, mother_trip_id):
+    """ Updates a canonical trip
 
     Args:
-        can_id: Number, canonical trip id to update
-        trip: tracktotrip.Segment, canonical trip
-        mother_trip_id: Number, id of trip that caused
-            the update
+        cur (:obj:`psycopg2.cursor`)
+        can_id (int): canonical trip id to update
+        trip (:obj:`tracktotrip.Segment): canonical trip
+        mother_trip_id (int): Id of trip that caused the update
     """
 
     cur.execute("""
         UPDATE canonical_trips
         SET bounds=%s, points=%s
         WHERE canonical_id=%s
-        """, (dbBounds(trip.bounds()), dbPoints(trip.points), can_id))
+        """, (gis_bounds(trip.bounds()), trip, can_id))
 
     cur.execute("""
         INSERT INTO canonical_trips_relations (canonical_trip, trip)
         VALUES (%s, %s)
         """, (can_id, mother_trip_id))
 
-    return
+def query_locations(cur, lat, lon, radius):
+    """ Queries the database for location around a point location
 
-def queryLocations(cur, lat, lon, dx):
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        lat (float): Latitude
+        lon (float): Longitude
+        radius (float): Radius from the given point, in meters
+    Returns:
+        :obj:`list` of (str, ?, ?): List of tuples with the label, the centroid, and the point
+            cluster of the location. Centroid and point cluster need to be converted
+    """
     cur.execute("""
         SELECT label, centroid, point_cluster
         FROM locations
         WHERE ST_DWithin(centroid, %s, %s)
-        """, (dbPoint(Point(lat, lon, None)), dx))
-    return cur.fetchall()
+        """, (Point(lat, lon, None), radius))
+    results = cur.fetchall()
+    return [
+        (label, to_point(centroid), to_segment(cluster)) for (label, centroid, cluster) in results
+    ]

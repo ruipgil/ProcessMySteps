@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+Entry point
+Spawns a server that coodinates the operations
+"""
 import argparse
 from flask import Flask, request, jsonify
 from processmysteps.process_manager import ProcessingManager
@@ -20,15 +25,31 @@ app = Flask(__name__)
 
 manager = ProcessingManager(args.config)
 
-def setHeaders(response):
+def set_headers(response):
+    """ Sets appropriate headers
+
+    Args:
+        response (:obj:`flask.response`)
+    Returns:
+        :obj:`flask.response`
+    """
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
 
-def sendState():
-    response = jsonify(manager.currentState())
-    return setHeaders(response)
+def send_state():
+    """ Helper function to send state
 
-def undoStep():
+    Creates a response with the current state, converts it to JSON and sets its headers
+
+    Returns:
+        :obj:`flask.response`
+    """
+    response = jsonify(manager.current_state())
+    return set_headers(response)
+
+def undo_step():
+    """ Undo current state
+    """
     manager.restore()
 
 @app.route('/previous', methods=['GET'])
@@ -36,72 +57,104 @@ def previous():
     """Restores a previous state
 
     Returns:
-        A response instance
+        :obj:`flask.response`
     """
     manager.restore()
-    return sendState()
+    return send_state()
 
 @app.route('/next', methods=['POST'])
 def next():
     """Advances the progress
 
     Returns:
-        A response instance
+        :obj:`flask.response`
     """
     payload = request.get_json(force=True)
     manager.process(payload)
-    return sendState()
+    return send_state()
 
 @app.route('/current', methods=['GET'])
 def current():
     """Gets the current state of the execution
 
     Returns:
-        A response instance
+        :obj:`flask.response`
     """
-    return sendState()
+    return send_state()
 
 @app.route('/completeTrip', methods=['POST'])
-def completeTrip():
+def complete_trip():
     """Gets trips already made from one point, to another
 
     Returns:
-        A response instance
+        :obj:`flask.response`
     """
     payload = request.get_json(force=True)
-    return setHeaders(jsonify(manager.completeTrip(payload)))
+    from_point = payload['from']
+    to_point = payload['to']
+    return set_headers(jsonify(manager.complete_trip(from_point, to_point)))
 
 @app.route('/config', methods=['POST'])
-def setConfiguration():
+def set_configuration():
+    """ Sets the current configuration, and returns it
+
+    Returns:
+        :obj:`flask.response`
+    """
     payload = request.get_json(force=True)
     manager.config.update(payload)
-    return setHeaders(jsonify(manager.config))
+    return set_headers(jsonify(manager.config))
 
 @app.route('/config', methods=['GET'])
-def getConfiguration():
-    return setHeaders(jsonify(manager.config))
+def get_configuration():
+    """ Gets the current configuration, and returns it
+
+    Returns:
+        :obj:`flask.response`
+    """
+    return set_headers(jsonify(manager.config))
 
 @app.route('/changeDay', methods=['POST'])
-def changeDay():
+def change_day():
+    """ Changes the current day
+
+    Returns:
+        :obj:`flask.response`
+    """
     payload = request.get_json(force=True)
-    manager.changeDay(payload['day'])
-    return sendState()
+    manager.change_day(payload['day'])
+    return send_state()
 
 @app.route('/reloadQueue', methods=['GET'])
-def reloadQueue():
-    manager.reloadQueue()
-    return sendState()
+def reload_queue():
+    """ Changes the current day
+
+    Returns:
+        :obj:`flask.response`
+    """
+    manager.reload_queue()
+    return send_state()
 
 @app.route('/bulkProcess', methods=['GET'])
-def bulkProcess():
-    manager.bulkProcess()
-    return sendState()
+def bulk_process():
+    """ Starts bulk processing
+
+    Returns:
+        :obj:`flask.response`
+    """
+    manager.bulk_process()
+    return send_state()
 
 @app.route('/loadLIFE', methods=['POST'])
-def loadLIFE():
+def load_life():
+    """ Loads a life formated string into the database
+
+    Returns:
+        :obj:`flask.response`
+    """
     payload = request.data
-    manager.loadLIFE(payload)
-    return sendState()
+    manager.load_life(payload)
+    return send_state()
 
 if __name__ == '__main__':
     app.run(debug=True, port=args.port, host='0.0.0.0')
