@@ -12,6 +12,7 @@ import numpy as np
 import tracktotrip as tt
 from tracktotrip.classifier import Classifier
 from tracktotrip.learn_trip import learn_trip
+from tracktotrip.transportation_mode import extract_features
 from processmysteps import db
 
 from .default_config import default_config
@@ -389,7 +390,7 @@ class ProcessingManager(object):
 
         # Backup
         # if self.config['backup_path']:
-        #     for gpx in self.queue[self.currentDay]:
+        #     for gpx in self.queue[self.current_day]:
         #         from_path = gpx['path']
         #         to_path = join(expanduser(self.config['backup_path']), gpx['name'])
         #         rename(from_path, to_path)
@@ -399,8 +400,17 @@ class ProcessingManager(object):
 
         if not self.is_bulk_processing:
             for segment in track.segments:
-                # self.clf.learn(segment.points)
-                break
+                tmodes = segment.transportation_modes
+                points = segment.points
+                features = []
+                labels = []
+
+                for tmode in tmodes:
+                    points_part = points[tmode['from']:tmode['to']]
+                    features.append(extract_features(points_part, self.clf.feature_length/2))
+                    labels.append(tmode['label'])
+
+                self.clf.learn(features, labels)
 
         # To LIFE
         if self.config['life_path']:

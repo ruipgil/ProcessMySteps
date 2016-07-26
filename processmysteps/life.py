@@ -131,7 +131,6 @@ class Life:
             try:
                 line = line.strip().lower()
                 line = line.split(";")[0]
-                print("'%s'" % line)
                 if len(line)==0:
                     pass
                 elif line[:2]=="--":
