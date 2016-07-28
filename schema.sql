@@ -1,5 +1,7 @@
--- CREATE EXTENSION postgis;
--- SELECT postgis_full_version();
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
+CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 
 CREATE TABLE IF NOT EXISTS locations (
   label TEXT PRIMARY KEY,
