@@ -70,8 +70,11 @@ def next():
     Returns:
         :obj:`flask.response`
     """
+    print("1")
     payload = request.get_json(force=True)
+    print("2")
     manager.process(payload)
+    print("3")
     return send_state()
 
 @app.route('/current', methods=['GET'])
@@ -158,4 +161,4 @@ def load_life():
     return send_state()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=args.port, host='0.0.0.0')
+    app.run(debug=True, port=args.port, host='0.0.0.0', threaded=True)
