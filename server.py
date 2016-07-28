@@ -70,11 +70,8 @@ def next():
     Returns:
         :obj:`flask.response`
     """
-    print("1")
     payload = request.get_json(force=True)
-    print("2")
     manager.process(payload)
-    print("3")
     return send_state()
 
 @app.route('/current', methods=['GET'])
