@@ -301,17 +301,15 @@ class ProcessingManager(object):
             :obj:`tracktotrip.Track`
         """
         config = self.config
-        if not track.preprocessed:
-            track.preprocess(max_acc=config['preprocess']['max_acc'])
 
+        track.name = track.generate_name(config['trip_name_format'])
         return track.to_trip(
-            track.name,
             smooth_strategy=config['smoothing']['algorithm'],
             smooth_noise=config['smoothing']['noise'],
             seg_eps=config['segmentation']['epsilon'],
             seg_min_time=config['segmentation']['min_time'],
-            simplify_dist_threshold=config['simplification']['dist_threshold'],
-            file_format=config['trip_name_format']
+            simplify_max_dist_error=config['simplification']['max_dist_error'],
+            simplify_max_speed_error=config['simplification']['max_speed_error']
         )
 
     def adjust_to_annotate(self, track):

@@ -14,21 +14,22 @@ CONFIG = {
         'user': None,
         'pass': None
     },
-    'preprocess': {
-        'max_acc': 30.0
-    },
+    # 'preprocess': {
+    #     'max_acc': 30.0
+    # },
     'smoothing': {
         'use': True,
         'algorithm': 'inverse',
-        'noise': 5
+        'noise': 10
     },
     'segmentation': {
         'use': True,
-        'epsilon': 0.15,
+        'epsilon': 1.0,
         'min_time': 80
     },
     'simplification': {
-        'dist_threshold': 0.3,
+        'max_dist_error': 2.0,
+        'max_speed_error': 1.0,
         'eps': 0.15
     },
     'location': {
