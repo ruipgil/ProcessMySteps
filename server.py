@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description='Starts the server to process track
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
         default=5000,
         help='port to use')
-parser.add_argument('-h', '--host', dest='host', metavar='h', type=str,
+parser.add_argument('-H', '--host', dest='host', metavar='h', type=str,
         default='0.0.0.0',
         help='host name')
 parser.add_argument('--debug', dest='debug', action='store_false',

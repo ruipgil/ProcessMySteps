@@ -123,10 +123,14 @@ class ProcessingManager(object):
     """
 
     def __init__(self, config_file):
-        with open(expanduser(config_file), 'r') as config_file:
-            config = json.loads(config_file.read())
         self.config = dict(CONFIG)
-        self.config.update(config)
+        try:
+            with open(expanduser(config_file), 'r') as config_file:
+                config = json.loads(config_file.read())
+            self.config.update(config)
+        except:
+            pass
+
 
         clf_path = self.config['transportation']['classifier_path']
         if clf_path:
@@ -152,6 +156,8 @@ class ProcessingManager(object):
         Returns:
             :obj:`list` of :obj:`dict`
         """
+        if not self.config['input_path']:
+            return []
 
         input_path = expanduser(self.config['input_path'])
         files = listdir(input_path)
@@ -394,7 +400,8 @@ class ProcessingManager(object):
                 rename(from_path, to_path)
 
         # Export trip to GPX
-        save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
+        if self.config['output_path']:
+            save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
             learn_transportation_mode(track, self.clf)
