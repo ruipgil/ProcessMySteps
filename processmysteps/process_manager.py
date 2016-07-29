@@ -5,7 +5,7 @@ Contains class that orchestrates processing
 import re
 import json
 from os import listdir, stat, rename
-from os.path import join, expanduser
+from os.path import join, expanduser, isfile
 from collections import OrderedDict
 import tracktotrip as tt
 from tracktotrip.classifier import Classifier
@@ -72,6 +72,21 @@ def file_details(base_path, filepath):
         'date': date.date().isoformat()
     }
 
+def update_dict(target, updater):
+    """ Updates a dictionary, keeping the same structure
+
+    Args:
+        target (:obj:`dict`): dictionary to update
+        updater (:obj:`dict`): dictionary with the new information
+    """
+    target_keys = target.keys()
+    for key in updater.keys():
+        if key in target_keys:
+            if isinstance(target[key], dict):
+                update_dict(target[key], updater[key])
+            else:
+                target[key] = updater[key]
+
 
 class Step(object):
     """ Step enumeration
@@ -124,13 +139,11 @@ class ProcessingManager(object):
 
     def __init__(self, config_file):
         self.config = dict(CONFIG)
-        try:
+
+        if config_file and isfile(expanduser(config_file)):
             with open(expanduser(config_file), 'r') as config_file:
                 config = json.loads(config_file.read())
-            self.config.update(config)
-        except:
-            pass
-
+                update_dict(self.config, config)
 
         clf_path = self.config['transportation']['classifier_path']
         if clf_path:
@@ -144,8 +157,6 @@ class ProcessingManager(object):
         self.history = []
         self.current_day = None
         self.reset()
-        # dbc = self.config['db']
-        # db.checkConn(dbc['host'], dbc['name'], dbc['user'], dbc['port'], dbc['pass'])
 
     def list_gpxs(self):
         """ Lists gpx files from the input path, and some details
@@ -489,9 +500,12 @@ class ProcessingManager(object):
         It includes all trips/tracks of the day
 
         Returns:
-            :obj:`tracktotrip.Track`
+            :obj:`tracktotrip.Track` or None
         """
-        return self.history[-1]
+        if self.current_step is Step.done:
+            return None
+        else:
+            return self.history[-1]
 
     def current_state(self):
         """ Gets the current processing/server state
@@ -499,11 +513,12 @@ class ProcessingManager(object):
         Returns:
             :obj:`dict`
         """
+        current = self.current_track()
         return {
             'step': self.current_step,
             'queue': list(self.queue.items()),
-            'track': self.current_track().to_json(),
-            'life': self.current_track().to_life() if self.current_step is Step.annotate else '',
+            'track': current.to_json() if current else None,
+            'life': current.to_life() if current and self.current_step is Step.annotate else '',
             'currentDay': self.current_day
         }
 

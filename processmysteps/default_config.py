@@ -14,9 +14,6 @@ CONFIG = {
         'user': None,
         'pass': None
     },
-    # 'preprocess': {
-    #     'max_acc': 30.0
-    # },
     'smoothing': {
         'use': True,
         'algorithm': 'inverse',
@@ -41,11 +38,10 @@ CONFIG = {
     'transportation': {
         'remove_stops': False,
         'min_time': 60,
-        'classifier_path': None#'classifier.data'# None
+        'classifier_path': None
     },
     'trip_learning': {
-        'epsilon': 0.0,
-        'classifier_path': None,
+        'epsilon': 0.0
     },
     'trip_name_format': '%Y-%m-%d'
 }
