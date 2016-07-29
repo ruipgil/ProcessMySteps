@@ -41,7 +41,7 @@ CONFIG = {
     'transportation': {
         'remove_stops': False,
         'min_time': 60,
-        'classifier_path': 'classifier.data'# None
+        'classifier_path': None#'classifier.data'# None
     },
     'trip_learning': {
         'epsilon': 0.0,
