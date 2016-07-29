@@ -15,7 +15,8 @@ parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
 parser.add_argument('-H', '--host', dest='host', metavar='h', type=str,
         default='0.0.0.0',
         help='host name')
-parser.add_argument('--debug', dest='debug', action='store_false',
+parser.add_argument('--debug', dest='debug', action='store_true',
+        default=False,
         help='print server debug information')
 parser.add_argument('--verbose', dest='verbose',
         action='store_false',
