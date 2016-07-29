@@ -12,6 +12,9 @@ parser = argparse.ArgumentParser(description='Starts the server to process track
 parser.add_argument('-p', '--port', dest='port', metavar='p', type=int,
         default=5000,
         help='port to use')
+parser.add_argument('-h', '--host', dest='host', metavar='h', type=str,
+        default='0.0.0.0',
+        help='host name')
 parser.add_argument('--debug', dest='debug', action='store_false',
         help='print server debug information')
 parser.add_argument('--verbose', dest='verbose',
@@ -158,4 +161,4 @@ def load_life():
     return send_state()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=args.port, host='0.0.0.0', threaded=True)
+    app.run(debug=args.debug, port=args.port, host=args.host, threaded=True)
