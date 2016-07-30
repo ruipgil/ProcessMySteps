@@ -244,7 +244,9 @@ class ProcessingManager(object):
         """
         if delete:
             del self.queue[self.current_day]
-        self.change_day(list(self.queue.keys())[0])
+        existing_days = list(self.queue.keys())
+        if len(existing_days) > 0:
+            self.change_day(existing_days[0])
 
     def load_days(self):
         """ Reloads queue and sets the current day as the oldest one
@@ -570,3 +572,8 @@ class ProcessingManager(object):
             )
 
         db.dispose(conn, cur)
+
+    def update_config(self, new_config):
+        update_dict(self.config, new_config)
+        if self.current_step is Step.done:
+            self.load_days()

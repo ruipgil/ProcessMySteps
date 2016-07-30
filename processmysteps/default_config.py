@@ -5,7 +5,8 @@ Base line settings
 CONFIG = {
     'input_path': None,
     'backup_path': None,
-    'dest_path': None,
+    'output_path': None,
+    'life_path': None,
     'life_all': None,
     'db': {
         'host': None,

@@ -107,7 +107,7 @@ def set_configuration():
         :obj:`flask.response`
     """
     payload = request.get_json(force=True)
-    manager.config.update(payload)
+    manager.update_config(payload)
     return set_headers(jsonify(manager.config))
 
 @app.route('/config', methods=['GET'])
