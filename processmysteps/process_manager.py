@@ -153,6 +153,7 @@ class ProcessingManager(object):
 
         self.is_bulk_processing = False
         self.queue = {}
+        self.life_queue = []
         self.current_step = None
         self.history = []
         self.current_day = None
@@ -176,6 +177,20 @@ class ProcessingManager(object):
 
         files = [file_details(input_path, f) for f in files]
         files = sorted(files, key=lambda f: f['date'])
+        return files
+
+    def list_lifes(self):
+        """ Lists life files from the input path, and some details
+
+        Returns:
+            :obj:`list` of :obj:`dict`
+        """
+        if not self.config['input_path']:
+            return []
+
+        input_path = expanduser(self.config['input_path'])
+        files = listdir(input_path)
+        files = [f for f in files if f.split('.')[-1] == 'life']
         return files
 
     def reset(self):
@@ -226,6 +241,7 @@ class ProcessingManager(object):
         queue = {}
 
         gpxs = self.list_gpxs()
+        lifes = self.list_lifes()
         for gpx in gpxs:
             day = gpx['date']
             if day in queue:
@@ -234,6 +250,7 @@ class ProcessingManager(object):
                 queue[day] = [gpx]
 
         self.queue = OrderedDict(sorted(queue.items()))
+        self.life_queue = lifes
 
     def next_day(self, delete=True):
         """ Advances a day (to next existing one)
@@ -299,13 +316,15 @@ class ProcessingManager(object):
         """ Starts bulk processing all GPXs queued
         """
         self.is_bulk_processing = True
+        lifes = [open(expanduser(join(self.config['input_path'], f)), 'r') for f in self.life_queue]
+        lifes = u'\n'.join(lifes)
         while len(self.queue.values()) > 0:
             # preview -> adjust
             self.process({'changes': [], 'LIFE': ''})
             # adjust -> annotate
             self.process({'changes': [], 'LIFE': ''})
             # annotate -> store
-            self.process({'changes': [], 'LIFE': ''})
+            self.process({'changes': [], 'LIFE': lifes})
         self.is_bulk_processing = False
 
     def preview_to_adjust(self, track):
@@ -405,19 +424,13 @@ class ProcessingManager(object):
             changes (:obj:`list` of :obj:`dict`): Details of, user made, changes
         """
 
-        # Backup
-        if self.config['backup_path']:
-            for gpx in self.queue[self.current_day]:
-                from_path = gpx['path']
-                to_path = join(expanduser(self.config['backup_path']), gpx['name'])
-                rename(from_path, to_path)
-
         # Export trip to GPX
         if self.config['output_path']:
             save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
             learn_transportation_mode(track, self.clf)
+            # self.clf.save_to_file()
 
         # To LIFE
         if self.config['life_path']:
@@ -432,8 +445,9 @@ class ProcessingManager(object):
 
         if conn and cur:
 
-            db.load_from_life(
+            db.load_from_segments_annotated(
                 cur,
+                self.current_track(),
                 life,
                 self.config['location']['max_distance'],
                 self.config['location']['min_samples']
@@ -492,6 +506,13 @@ class ProcessingManager(object):
             # db.insertStays(cur, trip, trips_ids, life)
             db.dispose(conn, cur)
 
+        # Backup
+        if self.config['backup_path']:
+            for gpx in self.queue[self.current_day]:
+                from_path = gpx['path']
+                to_path = join(expanduser(self.config['backup_path']), gpx['name'])
+                rename(from_path, to_path)
+
         self.next_day()
         self.current_step = Step.preview
         return self.current_track()
@@ -521,7 +542,8 @@ class ProcessingManager(object):
             'queue': list(self.queue.items()),
             'track': current.to_json() if current else None,
             'life': current.to_life() if current and self.current_step is Step.annotate else '',
-            'currentDay': self.current_day
+            'currentDay': self.current_day,
+            'lifeQueue': self.life_queue
         }
 
     def complete_trip(self, from_point, to_point):
@@ -564,8 +586,9 @@ class ProcessingManager(object):
         conn, cur = self.db_connect()
 
         if conn and cur:
-            db.load_from_life(
+            db.load_from_segments_annotated(
                 cur,
+                tt.Track('', []),
                 content,
                 self.config['location']['max_distance'],
                 self.config['location']['min_samples']

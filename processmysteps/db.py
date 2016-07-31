@@ -74,6 +74,69 @@ def span_date_to_datetime(date, minutes):
     str_date = "%s %02d%02d" % (date, minutes/60, minutes%60)
     return datetime.datetime.strptime(str_date, date_format)
 
+def get_day_from_life(life, track):
+    track_time = track.segments[0].points[0].time
+    track_day = "%d_%d_%d" % (track_time.year, track_time.month, track_time.day)
+    for day in life.days:
+        if day == track_day:
+            return day
+    return None
+
+def life_date(point):
+    date = point.time.date()
+    return "%d_%02d_%02d" % (date.year, date.month, date.day)
+
+def life_time(point):
+    time = point.time.time()
+    return "%02d%02d" % (time.hour, time.minute)
+
+def load_from_segments_annotated(cur, track, life_content, max_distance, min_samples):
+    """ Uses a LIFE formated string to populate the database
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+        track (:obj:`tracktotrip.Track`)
+        content_content (str): LIFE formatted string
+        max_distance (float): Max location distance. See
+            `tracktotrip.location.update_location_centroid`
+        min_samples (float): Minimum samples requires for location.  See
+            `tracktotrip.location.update_location_centroid`
+    """
+    life = Life()
+    life.from_string(life_content.encode('utf8').split('\n'))
+
+    def in_loc(points, i):
+        point = points[i]
+        location = life.where_when(life_date(point), life_time(point))
+        if location is not None:
+            if isinstance(location, basestring):
+                insert_location(cur, location, point, max_distance, min_samples)
+            else:
+                for loc in location:
+                    insert_location(cur, loc, point, max_distance, min_samples)
+
+
+    for segment in track.segments:
+        in_loc(segment.points, 0)
+        in_loc(segment.points, -1)
+        # find trip
+        insert_segment(cur, segment, max_distance, min_samples)
+
+    # Insert stays
+    for day in life.days:
+        date = day.date
+        for span in day.spans:
+            start = span_date_to_datetime(date, span.start)
+            end = span_date_to_datetime(date, span.end)
+
+            if isinstance(span.place, str):
+                insert_stay(cur, span.place, start, end)
+
+    # Insert canonical places
+    for place, (lat, lon) in life.locations.items():
+        insert_location(cur, place, Point(lat, lon, None), max_distance, min_samples)
+
+
 def load_from_life(cur, content, max_distance, min_samples):
     """ Uses a LIFE formated string to populate the database
 
@@ -168,6 +231,8 @@ def insert_location(cur, label, point, max_distance, min_samples):
             `tracktotrip.location.update_location_centroid`
     """
 
+    label = unicode(label, 'utf-8')
+
     cur.execute("""
             SELECT label, centroid, point_cluster
             FROM locations
@@ -254,8 +319,8 @@ def insert_segment(cur, segment, max_distance, min_samples):
     Returns:
         int: Segment id
     """
-    insert_location(cur, segment.location_from.label, segment.points[0], max_distance, min_samples)
-    insert_location(cur, segment.location_to.label, segment.points[-1], max_distance, min_samples)
+    # insert_location(cur, segment.location_from.label, segment.points[0], max_distance, min_samples)
+    # insert_location(cur, segment.location_to.label, segment.points[-1], max_distance, min_samples)
 
     # def toTsmp(d):
     #     return psycopg2.Timestamp(d.year, d.month, d.day, d.hour, d.minute, d.second)
@@ -267,8 +332,8 @@ def insert_segment(cur, segment, max_distance, min_samples):
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING trip_id
             """, (
-                segment.location_from.label,
-                segment.location_to.label,
+                segment.location_from.label.lower(),
+                segment.location_to.label.lower(),
                 segment.points[0].time,
                 segment.points[-1].time,
                 gis_bounds(segment.bounds()),
