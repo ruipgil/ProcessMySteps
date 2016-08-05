@@ -34,7 +34,9 @@ CONFIG = {
         'max_distance': 20,
         'min_samples': 2,
         'limit': 5,
-        'google_key': ''
+        'google_key': '',
+        'foursquare_client_id': '',
+        'foursquare_client_secret': ''
     },
     'transportation': {
         'remove_stops': False,

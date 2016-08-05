@@ -8,6 +8,7 @@ from os import listdir, stat, rename
 from os.path import join, expanduser, isfile
 from collections import OrderedDict
 import tracktotrip as tt
+from tracktotrip.location import infer_location
 from tracktotrip.classifier import Classifier
 from tracktotrip.learn_trip import learn_trip, complete_trip
 from tracktotrip.transportation_mode import learn_transportation_mode
@@ -384,6 +385,8 @@ class ProcessingManager(object):
             get_locations,
             max_distance=c_loc['max_distance'],
             google_key=c_loc['google_key'],
+            foursquare_client_id=c_loc['foursquare_client_id'],
+            foursquare_client_secret=c_loc['foursquare_client_secret'],
             limit=c_loc['limit']
         )
         track.infer_transportation_mode(
@@ -600,3 +603,36 @@ class ProcessingManager(object):
         update_dict(self.config, new_config)
         if self.current_step is Step.done:
             self.load_days()
+
+    def location_suggestion(self, point):
+        c_loc = self.config['location']
+        conn, cur = self.db_connect()
+
+        def get_locations(point, radius):
+            """ Gets locations within a radius of a point
+
+            See `db.query_locations`
+
+            Args:
+                point (:obj:`tracktotrip.Point`)
+                radius (float): Radius, in meters
+            Returns:
+                :obj:`list` of (str, ?, ?)
+            """
+            if cur:
+                return db.query_locations(cur, point.lat, point.lon, radius)
+            else:
+                return []
+
+        locs = infer_location(
+            point,
+            get_locations,
+            max_distance=c_loc['max_distance'],
+            google_key=c_loc['google_key'],
+            foursquare_client_id=c_loc['foursquare_client_id'],
+            foursquare_client_secret=c_loc['foursquare_client_secret'],
+            limit=c_loc['limit']
+        )
+        db.dispose(conn, cur)
+
+        return locs.to_json()
