@@ -161,5 +161,17 @@ def load_life():
     manager.load_life(payload)
     return send_state()
 
+@app.route('/location', methods=['GET'])
+def location_suggestion():
+    """ Gets a location suggestion
+
+    Returns:
+        :obj:`list` of :obj:`str`
+    """
+    lat = float(request.args.get('lat'))
+    lon = float(request.args.get('lon'))
+    response = jsonify(manager.location_suggestion(Point(lat, lon, None)))
+    return set_headers(response)
+
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port, host=args.host, threaded=True)

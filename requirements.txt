@@ -14,5 +14,5 @@ Rtree==0.8.2
 scikit-learn==0.17.1
 scipy==0.18.0
 sklearn==0.0
-tracktotrip==0.3.1
+tracktotrip==0.3.2
 Werkzeug==0.11.10
