@@ -328,12 +328,10 @@ def insert_segment(cur, segment, max_distance, min_samples):
     tstamps = [p.time for p in segment.points]
 
     cur.execute("""
-            INSERT INTO trips (start_location, end_location, start_date, end_date, bounds, points, timestamps)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO trips (start_date, end_date, bounds, points, timestamps)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING trip_id
             """, (
-                segment.location_from.label.lower(),
-                segment.location_to.label.lower(),
                 segment.points[0].time,
                 segment.points[-1].time,
                 gis_bounds(segment.bounds()),
@@ -472,3 +470,29 @@ def query_locations(cur, lat, lon, radius):
     return [
         (label, to_point(centroid), to_segment(cluster)) for (label, centroid, cluster) in results
     ]
+
+def get_canonical_trips(cur):
+    """ Gets canonical trips
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+    Returns:
+        :obj:`list` of :obj:`dict`:
+            [{ 'id': 1, 'points': <tracktotrip.Segment> }, ...]
+    """
+    cur.execute("SELECT canonical_id, points FROM canonical_trips")
+    trips = cur.fetchall()
+    return [{'id': t[0], 'points': to_segment(t[1])} for t in trips]
+
+def get_canonical_locations(cur):
+    """ Gets canonical trips
+
+    Args:
+        cur (:obj:`psycopg2.cursor`)
+    Returns:
+        :obj:`list` of :obj:`dict`:
+            [{ 'id': 1, 'points': <tracktotrip.Segment> }, ...]
+    """
+    cur.execute("SELECT label, point_cluster FROM locations")
+    locations = cur.fetchall()
+    return [{'label': t[0], 'points': to_segment(t[1])} for t in locations]

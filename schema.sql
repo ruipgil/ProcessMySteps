@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS stays (
 CREATE TABLE IF NOT EXISTS canonical_trips (
   canonical_id SERIAL PRIMARY KEY,
 
-  start_location TEXT NOT NULL,
-  end_location TEXT NOT NULL,
+  -- start_location TEXT NOT NULL,
+  -- end_location TEXT NOT NULL,
 
   bounds geography(POLYGONZ, 4326) NOT NULL,
   points geography(LINESTRINGZ, 4326) NOT NULL

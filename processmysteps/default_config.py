@@ -28,7 +28,7 @@ CONFIG = {
     'simplification': {
         'max_dist_error': 2.0,
         'max_speed_error': 1.0,
-        'eps': 0.15
+        'eps': 0.000015
     },
     'location': {
         'max_distance': 20,

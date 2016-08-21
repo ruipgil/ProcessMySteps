@@ -173,5 +173,23 @@ def location_suggestion():
     response = jsonify(manager.location_suggestion(Point(lat, lon, None)))
     return set_headers(response)
 
+@app.route('/canonicalTrips', methods=['GET'])
+def get_canonical_trips():
+    response = jsonify(manager.get_canonical_trips())
+    return set_headers(response)
+
+@app.route('/canonicalLocations', methods=['GET'])
+def get_canonical_locations():
+    response = jsonify(manager.get_canonical_locations())
+    return set_headers(response)
+
+@app.route('/transportation', methods=['POST'])
+def get_transportation_suggestions():
+    payload = request.get_json(force=True)
+    points = [Point.from_json(p) for p in payload['points']]
+    response = jsonify(manager.get_transportation_suggestions(points))
+    return set_headers(response)
+
+
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port, host=args.host, threaded=True)

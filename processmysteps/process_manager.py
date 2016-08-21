@@ -8,10 +8,11 @@ from os import listdir, stat, rename
 from os.path import join, expanduser, isfile
 from collections import OrderedDict
 import tracktotrip as tt
+from tracktotrip.utils import pairwise
 from tracktotrip.location import infer_location
 from tracktotrip.classifier import Classifier
 from tracktotrip.learn_trip import learn_trip, complete_trip
-from tracktotrip.transportation_mode import learn_transportation_mode
+from tracktotrip.transportation_mode import learn_transportation_mode, classify
 from processmysteps import db
 
 from .default_config import CONFIG
@@ -342,7 +343,7 @@ class ProcessingManager(object):
         config = self.config
 
         track.name = track.generate_name(config['trip_name_format'])
-        return track.to_trip(
+        track = track.to_trip(
             smooth_strategy=config['smoothing']['algorithm'],
             smooth_noise=config['smoothing']['noise'],
             seg_eps=config['segmentation']['epsilon'],
@@ -350,6 +351,8 @@ class ProcessingManager(object):
             simplify_max_dist_error=config['simplification']['max_dist_error'],
             simplify_max_speed_error=config['simplification']['max_speed_error']
         )
+
+        return track
 
     def adjust_to_annotate(self, track):
         """ Extracts location and transportation modes
@@ -432,7 +435,8 @@ class ProcessingManager(object):
             save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
-            learn_transportation_mode(track, self.clf)
+            pass
+            # learn_transportation_mode(track, self.clf)
             # self.clf.save_to_file()
 
         # To LIFE
@@ -636,3 +640,31 @@ class ProcessingManager(object):
         db.dispose(conn, cur)
 
         return locs.to_json()
+
+    def get_canonical_trips(self):
+        conn, cur = self.db_connect()
+        result = []
+        if conn and cur:
+            result = db.get_canonical_trips(cur)
+        for val in result:
+            val['points'] = val['points'].to_json()
+            val['points']['id'] = val['id']
+        db.dispose(conn, cur)
+        return [r['points'] for r in result]
+
+    def get_canonical_locations(self):
+        conn, cur = self.db_connect()
+        result = []
+        if conn and cur:
+            result = db.get_canonical_locations(cur)
+        for val in result:
+            val['points'] = val['points'].to_json()
+            val['points']['label'] = val['label']
+        db.dispose(conn, cur)
+        return [r['points'] for r in result]
+
+    def get_transportation_suggestions(self, points):
+        segment = tt.Segment(points).compute_metrics()
+        points = segment.points
+        modes = classify(self.clf, points, self.config['transportation']['min_time'])
+        return modes['classification']
