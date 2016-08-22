@@ -196,6 +196,10 @@ def remove_day():
     manager.remove_day(payload["day"])
     return send_state()
 
+@app.route('/skipDay', methods=['POST'])
+def skip_day():
+    manager.next_day(delete=False)
+    return send_state()
 
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port, host=args.host, threaded=True)

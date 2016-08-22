@@ -264,6 +264,8 @@ class ProcessingManager(object):
         if delete:
             del self.queue[self.current_day]
         existing_days = list(self.queue.keys())
+        if self.current_day in existing_days:
+            existing_days.remove(self.current_day)
         if len(existing_days) > 0:
             self.change_day(existing_days[0])
 
