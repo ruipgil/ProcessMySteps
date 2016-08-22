@@ -190,6 +190,12 @@ def get_transportation_suggestions():
     response = jsonify(manager.get_transportation_suggestions(points))
     return set_headers(response)
 
+@app.route('/removeDay', methods=['POST'])
+def remove_day():
+    payload = request.get_json(force=True)
+    manager.remove_day(payload["day"])
+    return send_state()
+
 
 if __name__ == '__main__':
     app.run(debug=args.debug, port=args.port, host=args.host, threaded=True)

@@ -668,3 +668,11 @@ class ProcessingManager(object):
         points = segment.points
         modes = classify(self.clf, points, self.config['transportation']['min_time'])
         return modes['classification']
+
+    def remove_day(self, day):
+        if day in self.queue.keys():
+            if day == self.current_day:
+                self.next_day()
+            else:
+                del self.queue[day]
+
