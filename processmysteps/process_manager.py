@@ -265,9 +265,14 @@ class ProcessingManager(object):
             del self.queue[self.current_day]
         existing_days = list(self.queue.keys())
         if self.current_day in existing_days:
+            index = existing_days.index(self.current_day)
+            next_day = index if len(existing_days) > index + 1 else 0
             existing_days.remove(self.current_day)
+        else:
+            next_day = 0
+
         if len(existing_days) > 0:
-            self.change_day(existing_days[0])
+            self.change_day(existing_days[next_day])
 
     def load_days(self):
         """ Reloads queue and sets the current day as the oldest one
