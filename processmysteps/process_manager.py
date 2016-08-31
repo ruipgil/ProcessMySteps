@@ -14,8 +14,62 @@ from tracktotrip.classifier import Classifier
 from tracktotrip.learn_trip import learn_trip, complete_trip
 from tracktotrip.transportation_mode import learn_transportation_mode, classify
 from processmysteps import db
+from .life import Life
 
 from .default_config import CONFIG
+
+def inside(to_find, modes):
+    for elm in to_find:
+        if elm.lower() in modes:
+            return elm.lower()
+    return None
+
+def gte_time(small, big):
+    if small.hour < big.hour:
+        return True
+    elif small.hour == big.hour and small.minute <= big.minute:
+        return True
+    else:
+        return False
+
+def is_time_between(lower, time, upper):
+    return gte_time(lower, time) and gte_time(time, upper)
+
+def find_index_point(track, time):
+    for j, segment in enumerate(track.segments):
+        i = 0
+        for p_a, p_b in pairwise(segment.points):
+            if is_time_between(p_a.time, time, p_b.time):
+                return (j, i)
+            i = i + 1
+    return None, None
+
+def apply_transportation_mode_to(track, life_content, transportation_modes):
+    life = Life()
+    life.from_string(life_content.encode('utf8').split('\n'))
+
+    for segment in track.segments:
+        segment.transportation_modes = []
+
+    for day in life.days:
+        for span in day.spans:
+            has = inside(span.tags, transportation_modes)
+            if has:
+                start_time = db.span_date_to_datetime(span.day, span.start)
+                end_time = db.span_date_to_datetime(span.day, span.end)
+
+                start_segment, start_index = find_index_point(track, start_time)
+                end_segment, end_index = find_index_point(track, end_time)
+                if start_segment is not None:
+                    if end_index is None or end_segment != start_segment:
+                        end_index = len(track.segments[start_segment].points) - 1
+
+                    track.segments[start_segment].transportation_modes.append({
+                        'label': has,
+                        'from': start_index,
+                        'to': end_index
+                        })
+
 
 def save_to_file(path, content, mode="w"):
     """ Saves content to file
@@ -273,6 +327,8 @@ class ProcessingManager(object):
 
         if len(existing_days) > 0:
             self.change_day(existing_days[next_day])
+        else:
+            self.reset()
 
     def load_days(self):
         """ Reloads queue and sets the current day as the oldest one
@@ -442,13 +498,16 @@ class ProcessingManager(object):
             save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
         if not self.is_bulk_processing:
-            pass
-            # learn_transportation_mode(track, self.clf)
-            # self.clf.save_to_file()
+            apply_transportation_mode_to(track, life, set(self.clf.labels.classes_))
+            learn_transportation_mode(track, self.clf)
+            with open(self.config['transportation']['classifier_path'], 'w') as classifier_file:
+                self.clf.save_to_file(classifier_file)
 
         # To LIFE
         if self.config['life_path']:
-            save_to_file(join(expanduser(self.config['life_path']), track.name), life)
+            name = '.'.join(track.name.split('.')[:-1])
+            save_to_file(join(expanduser(self.config['life_path']), name), life)
+
             if self.config['life_all']:
                 life_all_file = expanduser(self.config['life_all'])
             else:
