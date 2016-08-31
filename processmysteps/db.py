@@ -15,7 +15,7 @@ def adapt_point(point):
     Params:
         points (:obj:`tracktotrip.Point`)
     """
-    point = ppygis.Point(point.lat, point.lon, 0, srid=4326)
+    point = ppygis.Point(point.lon, point.lat, 0, srid=4326)
     return AsIs(adapt(point.write_ewkb()).getquoted())
 
 def to_point(gis_point, time=None):
@@ -29,7 +29,7 @@ def to_point(gis_point, time=None):
         :obj:`tracktotrip.Point`
     """
     gis_point = ppygis.Geometry.read_ewkb(gis_point)
-    return Point(gis_point.x, gis_point.y, time)
+    return Point(gis_point.y, gis_point.x, time)
 
 def to_segment(gis_points, timestamps=None):
     """ Creates from raw ppygis representation
@@ -45,7 +45,7 @@ def to_segment(gis_points, timestamps=None):
     result = []
     for i, point in enumerate(gis_points):
         tmstmp = timestamps[i] if timestamps is not None else None
-        result.append(Point(point.x, point.y, tmstmp))
+        result.append(Point(point.y, point.x, tmstmp))
     return Segment(result)
 
 def adapt_segment(segment):
@@ -54,7 +54,7 @@ def adapt_segment(segment):
     Args:
         segment (:obj:`tracktotrip.Segment`)
     """
-    points = [ppygis.Point(p.lat, p.lon, 0, srid=4326) for p in segment.points]
+    points = [ppygis.Point(p.lon, p.lat, 0, srid=4326) for p in segment.points]
     return AsIs(adapt(ppygis.LineString(points).write_ewkb()).getquoted())
 
 
@@ -107,14 +107,15 @@ def load_from_segments_annotated(cur, track, life_content, max_distance, min_sam
 
     def in_loc(points, i):
         point = points[i]
+        print('in_loc', i, point.lat, point.lon)
         location = life.where_when(life_date(point), life_time(point))
+        print('location', location)
         if location is not None:
             if isinstance(location, basestring):
                 insert_location(cur, location, point, max_distance, min_samples)
             else:
                 for loc in location:
                     insert_location(cur, loc, point, max_distance, min_samples)
-
 
     for segment in track.segments:
         in_loc(segment.points, 0)
@@ -232,6 +233,7 @@ def insert_location(cur, label, point, max_distance, min_samples):
     """
 
     label = unicode(label, 'utf-8')
+    print 'Inserting location %s, %f, %f' % (label, point.lat, point.lon)
 
     cur.execute("""
             SELECT label, centroid, point_cluster
@@ -239,6 +241,7 @@ def insert_location(cur, label, point, max_distance, min_samples):
             WHERE label=%s
             """, (label, ))
     if cur.rowcount > 0:
+        print 'Using existing'
         # Updates current location set of points and centroid
         _, centroid, point_cluster = cur.fetchone()
         centroid = to_point(centroid)
@@ -246,12 +249,15 @@ def insert_location(cur, label, point, max_distance, min_samples):
         # centroid = ppygis.Geometry.read_ewkb(centroid)
         # point_cluster = pointsFromDb(point_cluster)
 
+        print 'Previous point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
         centroid, point_cluster = update_location_centroid(
             point,
             point_cluster,
             max_distance,
             min_samples
         )
+        print 'Then point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
+        print 'centroid: %s' % centroid.to_json()
 
         cur.execute("""
                 UPDATE locations
@@ -259,6 +265,7 @@ def insert_location(cur, label, point, max_distance, min_samples):
                 WHERE label=%s
                 """, (centroid, Segment(point_cluster), label))
     else:
+        print 'New location'
         # Creates new location
         cur.execute("""
                 INSERT INTO locations (label, centroid, point_cluster)
@@ -409,12 +416,10 @@ def insert_canonical_trip(cur, can_trip, mother_trip_id):
     """
 
     cur.execute("""
-        INSERT INTO canonical_trips (start_location, end_location, bounds, points)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO canonical_trips (bounds, points)
+        VALUES (%s, %s)
         RETURNING canonical_id
         """, (
-            can_trip.location_from.label,
-            can_trip.location_to.label,
             gis_bounds(can_trip.bounds()),
             Segment(can_trip.points)
         ))
@@ -461,15 +466,24 @@ def query_locations(cur, lat, lon, radius):
         :obj:`list` of (str, ?, ?): List of tuples with the label, the centroid, and the point
             cluster of the location. Centroid and point cluster need to be converted
     """
+    print '%f, %f, %f' % (lat, lon, radius)
     cur.execute("""
         SELECT label, centroid, point_cluster
         FROM locations
         WHERE ST_DWithin(centroid, %s, %s)
         """, (Point(lat, lon, None), radius))
+    # cur.execute("""
+    #     SELECT label, centroid, point_cluster
+    #     FROM locations
+    #     WHERE ST_SetSRID(ST_Point(-71.1043443253471, 42.3150676015829),4326)::geography
+    #     WHERE ST_Distance_Sphere(centroid, ST_GeomFromText('POINT(%s %s)', 4326)) >= %s
+    #     """, (lat, lon, radius))
     results = cur.fetchall()
-    return [
+    a = [
         (label, to_point(centroid), to_segment(cluster)) for (label, centroid, cluster) in results
     ]
+    print a
+    return a
 
 def get_canonical_trips(cur):
     """ Gets canonical trips
