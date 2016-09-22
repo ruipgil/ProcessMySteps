@@ -236,36 +236,34 @@ def insert_location(cur, label, point, max_distance, min_samples):
     print 'Inserting location %s, %f, %f' % (label, point.lat, point.lon)
 
     cur.execute("""
-            SELECT label, centroid, point_cluster
+            SELECT location_id, label, centroid, point_cluster
             FROM locations
             WHERE label=%s
-            """, (label, ))
+            ORDER BY ST_Distance(centroid, %s)
+            """, (label, point))
     if cur.rowcount > 0:
-        print 'Using existing'
         # Updates current location set of points and centroid
-        _, centroid, point_cluster = cur.fetchone()
+        location_id, _, centroid, point_cluster = cur.fetchone()
         centroid = to_point(centroid)
         point_cluster = to_segment(point_cluster).points
-        # centroid = ppygis.Geometry.read_ewkb(centroid)
-        # point_cluster = pointsFromDb(point_cluster)
 
-        print 'Previous point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
+        # print 'Previous point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
         centroid, point_cluster = update_location_centroid(
             point,
             point_cluster,
             max_distance,
             min_samples
         )
-        print 'Then point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
-        print 'centroid: %s' % centroid.to_json()
+        # print 'Then point %s, cluster %s' % (point, [p.to_json() for p in point_cluster])
+        # print 'centroid: %s' % centroid.to_json()
 
         cur.execute("""
                 UPDATE locations
                 SET centroid=%s, point_cluster=%s
-                WHERE label=%s
-                """, (centroid, Segment(point_cluster), label))
+                WHERE location_id=%s
+                """, (centroid, Segment(point_cluster), location_id))
     else:
-        print 'New location'
+        # print 'New location'
         # Creates new location
         cur.execute("""
                 INSERT INTO locations (label, centroid, point_cluster)
@@ -466,12 +464,13 @@ def query_locations(cur, lat, lon, radius):
         :obj:`list` of (str, ?, ?): List of tuples with the label, the centroid, and the point
             cluster of the location. Centroid and point cluster need to be converted
     """
-    print '%f, %f, %f' % (lat, lon, radius)
+    # print '%f, %f, %f' % (lat, lon, radius)
     cur.execute("""
         SELECT label, centroid, point_cluster
         FROM locations
         WHERE ST_DWithin(centroid, %s, %s)
-        """, (Point(lat, lon, None), radius))
+        ORDER BY ST_Distance(centroid, %s)
+        """, (Point(lat, lon, None), radius * 4, Point(lat, lon, None)))
     # cur.execute("""
     #     SELECT label, centroid, point_cluster
     #     FROM locations
