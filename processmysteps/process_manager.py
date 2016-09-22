@@ -285,6 +285,8 @@ class ProcessingManager(object):
                 segs.extend(gpx.segments)
 
             track = tt.Track('', segments=segs)
+            track.name = track.generate_name(self.config['trip_name_format'])
+
             self.history = [track]
             self.current_step = Step.preview
         else:
@@ -352,8 +354,15 @@ class ProcessingManager(object):
             :obj:`tracktotrip.Track`
         """
         step = self.current_step
-        changes = data['changes']
-        life = data['LIFE']
+        if 'changes' in data.keys():
+            changes = data['changes']
+        else:
+            changes = []
+
+        if 'LIFE' in data.keys():
+            life = data['LIFE']
+        else:
+            life = ''
 
         if len(changes) > 0:
             track = tt.Track.from_json(data['track'])
@@ -405,7 +414,9 @@ class ProcessingManager(object):
         """
         config = self.config
 
-        track.name = track.generate_name(config['trip_name_format'])
+        if not track.name or len(track.name) == 0:
+            track.name = track.generate_name(config['trip_name_format'])
+
         track = track.to_trip(
             smooth_strategy=config['smoothing']['algorithm'],
             smooth_noise=config['smoothing']['noise'],
@@ -493,15 +504,18 @@ class ProcessingManager(object):
             changes (:obj:`list` of :obj:`dict`): Details of, user made, changes
         """
 
+        if not track.name or len(track.name) == 0:
+            track.name = track.generate_name(self.config['trip_name_format'])
+
         # Export trip to GPX
         if self.config['output_path']:
             save_to_file(join(expanduser(self.config['output_path']), track.name), track.to_gpx())
 
-        if not self.is_bulk_processing:
-            apply_transportation_mode_to(track, life, set(self.clf.labels.classes_))
-            learn_transportation_mode(track, self.clf)
-            with open(self.config['transportation']['classifier_path'], 'w') as classifier_file:
-                self.clf.save_to_file(classifier_file)
+        # if not self.is_bulk_processing:
+        #     apply_transportation_mode_to(track, life, set(self.clf.labels.classes_))
+        #     learn_transportation_mode(track, self.clf)
+        #     with open(self.config['transportation']['classifier_path'], 'w') as classifier_file:
+        #         self.clf.save_to_file(classifier_file)
 
         # To LIFE
         if self.config['life_path']:
