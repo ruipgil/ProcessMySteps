@@ -8,7 +8,7 @@ from os import listdir, stat, rename
 from os.path import join, expanduser, isfile
 from collections import OrderedDict
 import tracktotrip as tt
-from tracktotrip.utils import pairwise
+from tracktotrip.utils import pairwise, estimate_meters_to_deg
 from tracktotrip.location import infer_location
 from tracktotrip.classifier import Classifier
 from tracktotrip.learn_trip import learn_trip, complete_trip
@@ -366,8 +366,8 @@ class ProcessingManager(object):
 
         if len(changes) > 0:
             track = tt.Track.from_json(data['track'])
-        else:
-            track = self.current_track().copy()
+            self.history[-1] = track
+        track = self.current_track().copy()
 
         if step == Step.preview:
             result = self.preview_to_adjust(track)#, changes)
@@ -417,11 +417,15 @@ class ProcessingManager(object):
         if not track.name or len(track.name) == 0:
             track.name = track.generate_name(config['trip_name_format'])
 
+        track.timezone(timezone=float(config['default_timezone']))
         track = track.to_trip(
+            smooth=config['smoothing']['use'],
             smooth_strategy=config['smoothing']['algorithm'],
             smooth_noise=config['smoothing']['noise'],
+            seg=config['segmentation']['use'],
             seg_eps=config['segmentation']['epsilon'],
             seg_min_time=config['segmentation']['min_time'],
+            simplify=config['simplification']['use'],
             simplify_max_dist_error=config['simplification']['max_dist_error'],
             simplify_max_speed_error=config['simplification']['max_speed_error']
         )
@@ -578,8 +582,10 @@ class ProcessingManager(object):
                 )
                 trips_ids.append(trip_id)
 
+                d_latlon = estimate_meters_to_deg(self.config['location']['max_distance'])
                 # Build/learn canonical trip
-                canonical_trips = db.match_canonical_trip(cur, trip)
+                canonical_trips = db.match_canonical_trip(cur, trip, d_latlon)
+                print "canonical_trips # = %d" % len(canonical_trips)
 
                 learn_trip(
                     trip,
@@ -587,7 +593,8 @@ class ProcessingManager(object):
                     canonical_trips,
                     insert_can_trip,
                     update_can_trip,
-                    self.config['simplification']['eps']
+                    self.config['simplification']['eps'],
+                    d_latlon
                 )
 
             # db.insertStays(cur, trip, trips_ids, life)
@@ -614,8 +621,10 @@ class ProcessingManager(object):
         """
         if self.current_step is Step.done:
             return None
-        else:
+        elif len(self.history) > 0:
             return self.history[-1]
+        else:
+            return None
 
     def current_state(self):
         """ Gets the current processing/server state
@@ -647,20 +656,23 @@ class ProcessingManager(object):
         Returns:
             :obj:`tracktotrip.Track`
         """
+        distance = estimate_meters_to_deg(self.config['location']['max_distance']) * 2
         b_box = (
-            min(from_point.lat, to_point.lat),
-            min(from_point.lon, to_point.lon),
-            max(from_point.lat, to_point.lat),
-            max(from_point.lon, to_point.lon)
+            min(from_point.lat, to_point.lat) - distance,
+            min(from_point.lon, to_point.lon) - distance,
+            max(from_point.lat, to_point.lat) + distance,
+            max(from_point.lon, to_point.lon) + distance
         )
 
+        canonical_trips = []
         conn, cur = self.db_connect()
         if conn and cur:
             # get matching canonical trips, based on bounding box
             canonical_trips = db.match_canonical_trip_bounds(cur, b_box)
+            print(len(canonical_trips))
             db.dispose(conn, cur)
 
-        return complete_trip(canonical_trips, from_point, to_point)
+        return complete_trip(canonical_trips, from_point, to_point, self.config['location']['max_distance'])
 
     def load_life(self, content):
         """ Adds LIFE content to the database

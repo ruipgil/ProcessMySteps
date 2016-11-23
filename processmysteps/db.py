@@ -351,7 +351,7 @@ def insert_segment(cur, segment, max_distance, min_samples):
 
     return trip_id
 
-def match_canonical_trip(cur, trip):
+def match_canonical_trip(cur, trip, distance):
     """ Queries database for canonical trips with bounding boxes that intersect the bounding
         box of the given trip
 
@@ -361,7 +361,7 @@ def match_canonical_trip(cur, trip):
     """
     cur.execute("""
         SELECT canonical_id, points FROM canonical_trips WHERE bounds && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
-        """ % trip.bounds())
+        """ % trip.bounds(thr=distance))
     results = cur.fetchall()
 
     can_trips = []
