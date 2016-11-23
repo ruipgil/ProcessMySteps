@@ -4,7 +4,8 @@ CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
 CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 
 CREATE TABLE IF NOT EXISTS locations (
-  label TEXT PRIMARY KEY,
+  location_id SERIAL PRIMARY KEY,
+  label TEXT,
   -- Point representative of the location
   centroid GEOGRAPHY(POINTZ, 4326) NOT NULL,
   -- Cluster of points that derived the location
@@ -14,8 +15,8 @@ CREATE TABLE IF NOT EXISTS locations (
 CREATE TABLE IF NOT EXISTS trips (
   trip_id SERIAL PRIMARY KEY,
 
-  start_location TEXT REFERENCES locations(label),
-  end_location TEXT REFERENCES locations(label),
+  start_location TEXT,
+  end_location TEXT,
 
   start_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
   end_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
