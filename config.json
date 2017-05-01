@@ -1,0 +1,22 @@
+{
+  "input_path": "~/tracks/input",
+  "backup_path": "~/tracks/backup",
+  "output_path": "~/tracks/dest/",
+  "life_path": "~/tracks/life/",
+  "life_all": "~/tracks/my.life",
+  "db": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "pmsteps",
+    "user": "pmsteps",
+    "pass": "pmsteps"
+  },
+  "transportation": {
+    "classifier_path": "classifier.data"
+  },
+  "location": {
+    "google_key": "",
+    "foursquare_client_id": "",
+    "foursquare_client_secret": ""
+  }
+}
